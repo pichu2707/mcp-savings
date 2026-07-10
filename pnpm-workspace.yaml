@@ -1,0 +1,8 @@
+packages:
+  - "packages/*"
+allowBuilds:
+  # msgpackr-extract is a native accelerator for a transitive dependency
+  # (msgpack encode/decode) pulled in by the OpenCode SDK toolchain; it has
+  # a pure-JS fallback and isn't needed for typecheck/build, so we don't
+  # grant it permission to run install scripts.
+  msgpackr-extract: false
