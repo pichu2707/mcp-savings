@@ -2,7 +2,13 @@ export type { ToolWeight, ServerWeight, TokenUsage, Snapshot } from "./types.js"
 export { EMPTY_TOKEN_USAGE } from "./types.js";
 export { weighTools, type WeighableTool } from "./weigh.js";
 export { attributeToServers, UNATTRIBUTED_SERVER } from "./attribute.js";
-export { formatSavingsTable, formatMeasurementTable, humanizeBytes, humanizeTokens } from "./report.js";
+export {
+  formatSavingsTable,
+  formatWeightTable,
+  formatMeasurementTable,
+  humanizeBytes,
+  humanizeTokens,
+} from "./report.js";
 export { SessionMeter } from "./session.js";
 export {
   type ServerConfig,

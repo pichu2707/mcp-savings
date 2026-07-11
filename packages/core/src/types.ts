@@ -1,3 +1,5 @@
+import type { ServerMeasurement } from "./measure.js";
+
 /**
  * Domain types for mcp-savings.
  *
@@ -71,4 +73,17 @@ export interface Snapshot {
   sessionTokens: TokenUsage;
   /** Real, provider-reported cost for the session, if the host exposes it. */
   sessionCost?: number;
+  /**
+   * Direct MCP server measurements (bytes + tokens), taken the same way
+   * `mcp-savings measure` does — see measure.ts. OPTIONAL: older snapshots
+   * (or hosts that don't attempt this) simply omit it, and `report`'s
+   * unified view falls back to measuring live in that case (see cli.ts).
+   */
+  mcpMeasurement?: ServerMeasurement[];
+  /**
+   * Model id used to tokenize `mcpMeasurement` (and, if the host records
+   * one, generally applicable to this snapshot). OPTIONAL for the same
+   * backward-compatibility reason as `mcpMeasurement`.
+   */
+  model?: string;
 }

@@ -36,17 +36,18 @@ function padLeft(text: string, width: number): string {
 }
 
 /**
- * Renders a plain-text/ASCII table of MCP server schema weight, plus a
- * summary line of real session token usage.
+ * Renders a plain-text/ASCII table of tool schema weight (bytes) per
+ * server/source, under a caller-supplied heading.
+ *
+ * Extracted out of `formatSavingsTable` so the unified `report` CLI command
+ * (see cli.ts) can render the SAME table shape for the "built-in & plugin
+ * tools" section, with its own heading, without duplicating the
+ * padding/box-drawing logic.
  *
  * HONESTY NOTE: the "bytes" column is serialized JSON schema size (local,
- * NOT tokenized). The "session tokens" line below it is real, provider
- * reported usage. They are never combined into a single derived number.
+ * NOT tokenized) — see types.ts honesty note.
  */
-export function formatSavingsTable(
-  servers: readonly ServerWeight[],
-  sessionTokens: TokenUsage,
-): string {
+export function formatWeightTable(servers: readonly ServerWeight[], heading: string): string {
   const totalBytes = servers.reduce((sum, server) => sum + server.bytes, 0);
   const header = ["SERVER", "TOOLS", "SCHEMA BYTES", "% OF TOTAL"];
   const rows = servers.map((server) => [
@@ -68,20 +69,39 @@ export function formatSavingsTable(
   const separator = `+${widths.map((w) => "-".repeat(w + 2)).join("+")}+`;
 
   const lines: string[] = [];
-  lines.push("MCP server schema weight (tool JSON.stringify size, not tokens):");
+  lines.push(heading);
   lines.push(separator);
   lines.push(renderRow(header));
   lines.push(separator);
   for (const row of rows) lines.push(renderRow(row));
   lines.push(separator);
   lines.push(`Total schema bytes: ${humanizeBytes(totalBytes)}`);
-  lines.push("");
-  lines.push("Session token usage (real, provider-reported):");
-  lines.push(`  input:     ${humanizeTokens(sessionTokens.input)}`);
-  lines.push(`  output:    ${humanizeTokens(sessionTokens.output)}`);
-  lines.push(`  reasoning: ${humanizeTokens(sessionTokens.reasoning)}`);
-  lines.push(`  cache read:  ${humanizeTokens(sessionTokens.cacheRead)}`);
-  lines.push(`  cache write: ${humanizeTokens(sessionTokens.cacheWrite)}`);
+
+  return lines.join("\n");
+}
+
+/**
+ * Renders a plain-text/ASCII table of MCP server schema weight, plus a
+ * summary line of real session token usage.
+ *
+ * HONESTY NOTE: the "bytes" column is serialized JSON schema size (local,
+ * NOT tokenized). The "session tokens" line below it is real, provider
+ * reported usage. They are never combined into a single derived number.
+ */
+export function formatSavingsTable(
+  servers: readonly ServerWeight[],
+  sessionTokens: TokenUsage,
+): string {
+  const lines = [
+    formatWeightTable(servers, "MCP server schema weight (tool JSON.stringify size, not tokens):"),
+    "",
+    "Session token usage (real, provider-reported):",
+    `  input:     ${humanizeTokens(sessionTokens.input)}`,
+    `  output:    ${humanizeTokens(sessionTokens.output)}`,
+    `  reasoning: ${humanizeTokens(sessionTokens.reasoning)}`,
+    `  cache read:  ${humanizeTokens(sessionTokens.cacheRead)}`,
+    `  cache write: ${humanizeTokens(sessionTokens.cacheWrite)}`,
+  ];
 
   return lines.join("\n");
 }
