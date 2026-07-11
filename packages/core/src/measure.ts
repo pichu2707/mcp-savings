@@ -10,7 +10,17 @@ const DEFAULT_TIMEOUT_MS = 8000;
 const DEFAULT_CONCURRENCY = 3;
 
 /** How to reach a single MCP server, host-agnostic. */
-export type ServerSpec = { name: string } & (
+export type ServerSpec = {
+  name: string;
+  /**
+   * Whether the host currently sends this server's schema to the model
+   * (OpenCode's `mcp.<name>.enabled`, default `true` when absent — see
+   * opencodeConfig.ts). A `false` server is still measured (see
+   * `measureServers` below) because its tokens are exactly the REALIZED
+   * savings number — but it is NOT what the model is currently paying for.
+   */
+  enabled: boolean;
+} & (
   | { transport: "stdio"; command: string; args?: string[]; env?: Record<string, string> }
   | { transport: "http"; url: string }
 );
@@ -28,6 +38,13 @@ export interface ToolMeasurement {
 export interface ServerMeasurement {
   server: string;
   ok: boolean;
+  /**
+   * Carried straight from `ServerSpec.enabled`. A server we measured without
+   * knowing its enabled state (older data predating this field) should be
+   * treated as `true` by callers — it was measured because it was
+   * connected, which is what "enabled" means.
+   */
+  enabled: boolean;
   /** Present when `ok` is false — connect/list failure, in human-readable form. */
   error?: string;
   tools: ToolMeasurement[];
@@ -133,11 +150,12 @@ export async function measureServer(
       ? null
       : toolMeasurements.reduce((sum, tool) => sum + (tool.tokens ?? 0), 0);
 
-    return { server: spec.name, ok: true, tools: toolMeasurements, bytes, tokens };
+    return { server: spec.name, ok: true, enabled: spec.enabled, tools: toolMeasurements, bytes, tokens };
   } catch (err) {
     return {
       server: spec.name,
       ok: false,
+      enabled: spec.enabled,
       error: err instanceof Error ? err.message : String(err),
       tools: [],
       bytes: 0,
@@ -155,6 +173,18 @@ export async function measureServer(
  * Measures multiple servers with small bounded concurrency (default 3 at a
  * time) so we don't blast dozens of simultaneous spawns/connections, then
  * sorts results by schema bytes descending (heaviest server first).
+ *
+ * TRADEOFF — `specs` may include `enabled: false` servers (see
+ * opencodeConfig.ts). Measuring one of those means briefly spawning its
+ * process (STDIO transport) or opening a connection (HTTP transport) to call
+ * `tools/list`, even though the user told the host not to run it. That's a
+ * real side effect on something the user turned off. We accept it anyway
+ * because it's the only way to compute a REALIZED savings number (what a
+ * disabled server's schema would have cost) rather than just a potential one
+ * — and because a single short-lived `tools/list` round trip is a much
+ * smaller intrusion than actually leaving the server connected. Every call
+ * site that feeds a disabled-inclusive spec list to this function should
+ * carry a short pointer comment back to this paragraph.
  */
 export async function measureServers(
   specs: readonly ServerSpec[],

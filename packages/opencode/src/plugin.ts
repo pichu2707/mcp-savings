@@ -113,6 +113,10 @@ export const OpencodeSavingsPlugin: Plugin = async (input) => {
   function refreshMcpMeasurementInBackground(modelID: string): void {
     void (async () => {
       try {
+        // `specs` includes `enabled: false` servers on purpose — measuring
+        // one briefly spawns/connects to it even though it's off; see
+        // measure.ts's `measureServers` doc for why that tradeoff is
+        // accepted (it's the only way to get a REALIZED savings number).
         const specs = readOpencodeMcpSpecs();
         if (specs.length === 0) return;
         const results = await measureServers(specs, modelID);

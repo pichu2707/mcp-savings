@@ -38,10 +38,13 @@ function splitCommandString(command: string): { command: string; args: string[] 
 }
 
 function toServerSpec(name: string, entry: OpencodeMcpEntry): ServerSpec | undefined {
-  if (entry.enabled === false) return undefined;
+  // Absence of `enabled` means OpenCode treats the server as connected — its
+  // default is `true`, not `false` — so only an explicit `false` counts as
+  // disabled.
+  const enabled = entry.enabled !== false;
 
   if (typeof entry.url === "string" && entry.url.length > 0) {
-    return { name, transport: "http", url: entry.url };
+    return { name, transport: "http", url: entry.url, enabled };
   }
 
   if (typeof entry.command === "string" && entry.command.length > 0) {
@@ -53,6 +56,7 @@ function toServerSpec(name: string, entry: OpencodeMcpEntry): ServerSpec | undef
       command,
       args: entry.args ?? args,
       env: entry.env,
+      enabled,
     };
   }
 
@@ -65,6 +69,7 @@ function toServerSpec(name: string, entry: OpencodeMcpEntry): ServerSpec | undef
       command,
       args: entry.args ?? args,
       env: entry.env,
+      enabled,
     };
   }
 
@@ -74,6 +79,14 @@ function toServerSpec(name: string, entry: OpencodeMcpEntry): ServerSpec | undef
 /**
  * Reads OpenCode's config file and turns its `mcp` section into host-agnostic
  * `ServerSpec`s, ready for `measureServers`.
+ *
+ * DELIBERATELY includes `enabled: false` servers instead of dropping them:
+ * `enabled: false` in OpenCode's own config is the one signal that actually
+ * stops a server's schema from being sent to the model, which makes it the
+ * only source of truth for a REALIZED (not merely potential) savings number.
+ * Dropping disabled servers here would make it impossible to ever measure
+ * what they're saving — see measure.ts's `measureServers` doc for the
+ * spawn-side-effect tradeoff this implies.
  *
  * Defensive by design: a missing config file, unreadable/corrupt JSON, or a
  * missing/malformed `mcp` key all resolve to `[]` rather than throwing —

@@ -116,18 +116,28 @@ export function formatSavingsTable(
  * is exact only for models with a bundled local tokenizer (see
  * tokenize.ts) — `n/a` means "no accurate local tokenizer for this model",
  * never "zero tokens".
+ *
+ * The "ENABLED" column is OpenCode's own `mcp.<name>.enabled` (see
+ * opencodeConfig.ts) — it's the line between PAY (enabled: what you're
+ * currently being charged for) and SAVED (disabled: what you already
+ * aren't). See cli.ts's `printReport`/`printMeasure` for where those two
+ * summary numbers get computed from this same table's data.
  */
 export function formatMeasurementTable(
   results: readonly ServerMeasurement[],
   model: string,
 ): string {
-  const header = ["SERVER", "TOOLS", "SCHEMA BYTES", "TOKENS", "STATUS"];
+  const header = ["SERVER", "ENABLED", "TOOLS", "SCHEMA BYTES", "TOKENS", "STATUS"];
   const rows = results.map((result) => {
+    // `enabled` missing (older snapshot, predating this field) is treated as
+    // `true` — see ServerMeasurement.enabled's doc in measure.ts.
+    const enabledLabel = result.enabled !== false ? "yes" : "no";
     if (!result.ok) {
-      return [result.server, "-", result.error ?? "unknown error", "-", "error"];
+      return [result.server, enabledLabel, "-", result.error ?? "unknown error", "-", "error"];
     }
     return [
       result.server,
+      enabledLabel,
       String(result.tools.length),
       humanizeBytes(result.bytes),
       result.tokens === null ? "n/a" : humanizeTokens(result.tokens),

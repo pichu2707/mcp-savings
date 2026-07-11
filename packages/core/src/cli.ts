@@ -75,10 +75,69 @@ async function resolveMcpMeasurement(
     return { results: snapshot.mcpMeasurement!, live: false };
   }
 
+  // `specs` includes `enabled: false` servers on purpose — measuring one
+  // briefly spawns/connects to it even though it's off; see measure.ts's
+  // `measureServers` doc for why that tradeoff is accepted.
   const specs = readOpencodeMcpSpecs();
   if (specs.length === 0) return { results: [], live: true };
   const results = await measureServers(specs, model);
   return { results, live: true };
+}
+
+/**
+ * Splits a resolved measurement into PAY (enabled servers — what's currently
+ * costing every request) and SAVED (disabled servers — what's already been
+ * cut). Shared by `printReport` and `printMeasure` so the two commands never
+ * disagree about which servers count toward which number.
+ *
+ * `enabled` missing (older snapshot data) is treated as `true` — see
+ * ServerMeasurement.enabled's doc in measure.ts.
+ */
+function splitPayAndSaved(results: readonly ServerMeasurement[]): {
+  payBytes: number;
+  payTokens: number | null;
+  payCount: number;
+  savedBytes: number;
+  savedTokens: number | null;
+  savedCount: number;
+} {
+  const enabledOk = results.filter((result) => result.enabled !== false && result.ok);
+  const disabledOk = results.filter((result) => result.enabled === false && result.ok);
+
+  return {
+    payBytes: enabledOk.reduce((sum, result) => sum + result.bytes, 0),
+    payTokens: enabledOk.some((result) => result.tokens === null)
+      ? null
+      : enabledOk.reduce((sum, result) => sum + (result.tokens ?? 0), 0),
+    payCount: enabledOk.length,
+    savedBytes: disabledOk.reduce((sum, result) => sum + result.bytes, 0),
+    savedTokens: disabledOk.some((result) => result.tokens === null)
+      ? null
+      : disabledOk.reduce((sum, result) => sum + (result.tokens ?? 0), 0),
+    savedCount: disabledOk.length,
+  };
+}
+
+/** Prints the PAY line, and the SAVED line only when there's a realized saving to show. */
+function printPayAndSaved(results: readonly ServerMeasurement[]): void {
+  const { payBytes, payTokens, payCount, savedBytes, savedTokens, savedCount } = splitPayAndSaved(results);
+  const payTokensText = payTokens === null ? "n/a" : `~${humanizeTokens(payTokens)}`;
+
+  console.log(
+    `PAY   ~${humanizeBytes(payBytes)} / ${payTokensText} tok per request — ${payCount} enabled server(s) ` +
+      `(estimated; tokens exact only for OpenAI models).`,
+  );
+
+  // Gated on bytes (always exact), not tokens (can be null) — see
+  // panel.ts's `computeRows` for the same "don't show a useless SAVED 0"
+  // reasoning.
+  if (savedBytes > 0) {
+    const savedTokensText = savedTokens === null ? "n/a" : `~${humanizeTokens(savedTokens)}`;
+    console.log(
+      `SAVED ~${humanizeBytes(savedBytes)} / ${savedTokensText} tok per request — already skipped by ` +
+        `${savedCount} disabled server(s).`,
+    );
+  }
 }
 
 async function printReport(): Promise<void> {
@@ -132,19 +191,8 @@ async function printReport(): Promise<void> {
   }
   console.log("");
 
-  // --- Savings summary (tokens), derived from the MCP measurement above ---
-  const okResults = mcpResults.filter((result) => result.ok);
-  const totalBytes = okResults.reduce((sum, result) => sum + result.bytes, 0);
-  const totalTokens = okResults.some((result) => result.tokens === null)
-    ? null
-    : okResults.reduce((sum, result) => sum + (result.tokens ?? 0), 0);
-  const tokensText = totalTokens === null ? "n/a" : `~${humanizeTokens(totalTokens)}`;
-
-  console.log(
-    `Disconnecting your MCP servers would save ~${humanizeBytes(
-      totalBytes,
-    )} / ${tokensText} per request (estimated; tokens exact only for OpenAI models).`,
-  );
+  // --- Cost/savings summary, derived from the MCP measurement above -------
+  printPayAndSaved(mcpResults);
 }
 
 function printList(): void {
@@ -176,6 +224,8 @@ function parseFlags(args: readonly string[], flagNames: readonly string[]): Reco
 }
 
 async function printMeasure(model: string, configPath: string | undefined): Promise<void> {
+  // Includes `enabled: false` servers on purpose — see measure.ts's
+  // `measureServers` doc for the spawn-side-effect tradeoff this implies.
   const specs = configPath === undefined ? readOpencodeMcpSpecs() : readOpencodeMcpSpecs(configPath);
   if (specs.length === 0) {
     console.log("No MCP servers found in the OpenCode config (or the config file doesn't exist).");
@@ -186,18 +236,7 @@ async function printMeasure(model: string, configPath: string | undefined): Prom
   console.log(formatMeasurementTable(results, model));
   console.log("");
 
-  const okResults = results.filter((result) => result.ok);
-  const totalBytes = okResults.reduce((sum, result) => sum + result.bytes, 0);
-  const totalTokens = okResults.some((result) => result.tokens === null)
-    ? null
-    : okResults.reduce((sum, result) => sum + (result.tokens ?? 0), 0);
-  const tokensText = totalTokens === null ? "n/a" : `~${humanizeTokens(totalTokens)}`;
-
-  console.log(
-    `Disconnecting all measured MCP servers would save ~${humanizeBytes(
-      totalBytes,
-    )} / ${tokensText} tokens per request (estimated; tokens exact only for OpenAI models).`,
-  );
+  printPayAndSaved(results);
 }
 
 async function main(argv: string[]): Promise<void> {

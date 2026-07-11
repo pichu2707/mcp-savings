@@ -58,24 +58,41 @@ async function resolveMeasurement(
     snapshot?.mcpMeasurement !== undefined && Date.now() - snapshot.timestamp < MCP_MEASUREMENT_TTL_MS;
   if (isFresh) return { results: snapshot.mcpMeasurement!, live: false };
 
+  // `specs` includes `enabled: false` servers on purpose — measuring one
+  // briefly spawns/connects to it even though it's off; see measure.ts's
+  // `measureServers` doc for why that tradeoff is accepted.
   const specs = readOpencodeMcpSpecs();
   if (specs.length === 0) return { results: [], live: true };
   const results = await measureServers(specs, model);
   return { results, live: true };
 }
 
-/** Renders one MCP server's row: a scaled bar (ok servers) or an error marker. */
+/**
+ * Renders one MCP server's row: a scaled bar (enabled + ok servers), a
+ * plain "(off)" line (disabled servers — not scaled against `maxTokens`,
+ * which is computed from enabled servers only in `buildReportContent`, so a
+ * bar here would imply a size comparison it isn't actually being weighed
+ * against), or an error marker (measurement failed — `ok: false`).
+ */
 function renderServerRow(result: ServerMeasurement, maxTokens: number) {
   const name = truncateLabel(result.server, DIALOG_NAME_WIDTH).padEnd(DIALOG_NAME_WIDTH, " ");
 
   if (!result.ok) {
+    const marker = result.enabled === false ? "✕ (off)" : "✕";
     return jsx("text", {
-      children: [`✕ ${name} `, jsx("span", { fg: RUST_ACCENT, children: result.error ?? "unknown error" })],
+      children: [`${marker} ${name} `, jsx("span", { fg: RUST_ACCENT, children: result.error ?? "unknown error" })],
+    });
+  }
+
+  const tokensLabel = result.tokens === null ? "n/a" : humanizeTokens(result.tokens);
+
+  if (result.enabled === false) {
+    return jsx("text", {
+      children: `  (off) ${name} ${humanizeBytes(result.bytes)} · ${tokensLabel} tok`,
     });
   }
 
   const bar = result.tokens === null ? "" : makeBar(result.tokens, maxTokens, DIALOG_BAR_WIDTH);
-  const tokensLabel = result.tokens === null ? "n/a" : humanizeTokens(result.tokens);
   return jsx("text", {
     children: [
       jsx("span", { fg: RUST_ACCENT, children: bar.padEnd(DIALOG_BAR_WIDTH, " ") }),
@@ -93,13 +110,28 @@ function renderServerRow(result: ServerMeasurement, maxTokens: number) {
  */
 function buildReportContent(snapshot: Snapshot | undefined, resolved: ResolvedMeasurement) {
   const tokens = snapshot?.sessionTokens ?? EMPTY_TOKEN_USAGE;
-  const okResults = resolved.results.filter((result) => result.ok);
-  const totalBytes = okResults.reduce((sum, result) => sum + result.bytes, 0);
-  const totalTokens = okResults.some((result) => result.tokens === null)
+
+  // HONESTY NOTE: PAY and SAVED are two different numbers, never combined —
+  // see cli.ts's `splitPayAndSaved`/`printPayAndSaved`, which this mirrors so
+  // the in-TUI report and the CLI report never disagree. `enabled` missing
+  // (older snapshot data) is treated as `true` — see ServerMeasurement's doc
+  // in measure.ts.
+  const enabledResults = resolved.results.filter((result) => result.enabled !== false);
+  const disabledResults = resolved.results.filter((result) => result.enabled === false);
+
+  const enabledOk = enabledResults.filter((result) => result.ok);
+  const payBytes = enabledOk.reduce((sum, result) => sum + result.bytes, 0);
+  const payTokens = enabledOk.some((result) => result.tokens === null)
     ? null
-    : okResults.reduce((sum, result) => sum + (result.tokens ?? 0), 0);
-  const maxTokens = Math.max(1, ...okResults.map((result) => result.tokens ?? 0));
-  const tokensText = totalTokens === null ? "n/a" : `~${humanizeTokens(totalTokens)}`;
+    : enabledOk.reduce((sum, result) => sum + (result.tokens ?? 0), 0);
+  const maxTokens = Math.max(1, ...enabledOk.map((result) => result.tokens ?? 0));
+  const payTokensText = payTokens === null ? "n/a" : `~${humanizeTokens(payTokens)}`;
+
+  const disabledOk = disabledResults.filter((result) => result.ok);
+  const savedBytes = disabledOk.reduce((sum, result) => sum + result.bytes, 0);
+  const savedTokens = disabledOk.some((result) => result.tokens === null)
+    ? null
+    : disabledOk.reduce((sum, result) => sum + (result.tokens ?? 0), 0);
 
   const rows = [
     jsx("text", { fg: RUST_ACCENT, children: "◢ mcp savings — full report" }),
@@ -120,10 +152,19 @@ function buildReportContent(snapshot: Snapshot | undefined, resolved: ResolvedMe
     ...resolved.results.map((result) => renderServerRow(result, maxTokens)),
     jsx("text", { children: "" }),
     jsx("text", {
-      children: `disconnecting your MCP servers would save ~${humanizeBytes(
-        totalBytes,
-      )} / ${tokensText} per request (estimated; tokens exact only for OpenAI models).`,
+      children: `PAY   ~${humanizeBytes(payBytes)} / ${payTokensText} per request — ${enabledOk.length} enabled server(s) (estimated; tokens exact only for OpenAI models).`,
     }),
+    // Only rendered when there's a realized saving — see panel.ts's
+    // `computeRows` for the same "don't show a useless SAVED 0" reasoning.
+    ...(savedBytes > 0
+      ? [
+          jsx("text", {
+            children: `SAVED ~${humanizeBytes(savedBytes)} / ${
+              savedTokens === null ? "n/a" : `~${humanizeTokens(savedTokens)}`
+            } per request — already skipped by ${disabledOk.length} disabled server(s).`,
+          }),
+        ]
+      : []),
   ];
 
   return jsx("scrollbox", { flexDirection: "column", children: rows });
