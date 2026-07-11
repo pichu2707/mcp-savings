@@ -1,13 +1,9 @@
 import type { Plugin } from "@opencode-ai/plugin";
-import type { TuiPlugin } from "@opencode-ai/plugin/tui";
-import { jsx } from "@opentui/solid/jsx-runtime";
 import {
   attributeToServers,
-  EMPTY_TOKEN_USAGE,
-  formatSavingsTable,
-  humanizeBytes,
-  humanizeTokens,
   loadSnapshot,
+  measureServers,
+  readOpencodeMcpSpecs,
   saveSnapshot,
   SessionMeter,
   weighTools,
@@ -42,14 +38,19 @@ function toTokenUsage(tokens: {
 }
 
 /**
- * The server-side v1 plugin. Listens for real token usage on assistant
- * messages and (best-effort, on a session's first assistant message, and
- * again whenever the session goes idle) refreshes MCP tool schema weight.
+ * The SERVER plugin — referenced by opencode.json.
  *
- * State is shared with the `tui` export below purely through the snapshot
- * file written by @mcp-savings/core's saveSnapshot/loadSnapshot — this is
- * the simplest robust option since the server plugin and the TUI plugin
- * are two separate module instances with no guaranteed shared memory.
+ * IMPORTANT: this file must export ONLY this plugin factory. OpenCode's
+ * loader CALLS every function-shaped export as a plugin `(input) => hooks`,
+ * so any extra exported function (a `tui` plugin, a formatting helper, etc.)
+ * gets invoked with the plugin input as its argument and throws, which makes
+ * OpenCode log "failed to load plugin" for the whole file. The TUI panel is
+ * therefore kept in panel.ts (imported only by tui-entry.ts, the tui.json
+ * entry), never re-exported from here.
+ *
+ * State is shared with the TUI panel purely through the on-disk snapshot
+ * (saveSnapshot/loadSnapshot) — the server plugin and the TUI plugin are two
+ * separate module instances with no guaranteed shared memory.
  */
 export const OpencodeSavingsPlugin: Plugin = async (input) => {
   const { client } = input;
@@ -63,7 +64,10 @@ export const OpencodeSavingsPlugin: Plugin = async (input) => {
    * into per-server schema weights.
    *
    * `/experimental/tool` is an UNSTABLE OpenCode endpoint — its shape may
-   * change or disappear in future OpenCode releases without notice.
+   * change or disappear in future OpenCode releases without notice. Note it
+   * returns only built-in/plugin tools, NOT MCP tools (OpenCode does not
+   * expose MCP tool schemas via its API) — the real MCP measurement is done
+   * by refreshMcpMeasurementInBackground below via a direct MCP connection.
    */
   async function refreshServerWeights(
     providerID: string,
@@ -72,9 +76,6 @@ export const OpencodeSavingsPlugin: Plugin = async (input) => {
     const toolsResult = await client.tool.list({ query: { provider: providerID, model: modelID } });
     if (!toolsResult.data) return undefined;
 
-    // client.mcp.status() only reports connection state, not tool
-    // ownership — we use its keys purely as the list of known server
-    // names for the attribution heuristic in attribute.ts.
     const statusResult = await client.mcp.status();
     const serverNames = statusResult.data ? Object.keys(statusResult.data) : [];
 
@@ -91,8 +92,37 @@ export const OpencodeSavingsPlugin: Plugin = async (input) => {
       serverWeights: resolvedWeights,
       totalSchemaBytes: resolvedWeights.reduce((sum, server) => sum + server.bytes, 0),
       sessionTokens: meter.totals(),
+      // Carry forward whatever MCP measurement we already have — the
+      // background refresh below (fire-and-forget) merges a fresh one in
+      // once it resolves, independently of this synchronous persist().
+      mcpMeasurement: previous?.mcpMeasurement,
+      model: previous?.model,
     };
     saveSnapshot(snapshot);
+  }
+
+  /**
+   * Best-effort, fire-and-forget: connects to each MCP server configured in
+   * OpenCode (same readOpencodeMcpSpecs + measureServers codepath the CLI's
+   * `measure` command uses) and merges the result into the snapshot's
+   * `mcpMeasurement`/`model` fields once it resolves. NON-BLOCKING BY DESIGN
+   * so it never delays the token-capture path; failures are swallowed (the
+   * snapshot just keeps whatever measurement it had, and `report`'s live
+   * fallback covers it).
+   */
+  function refreshMcpMeasurementInBackground(modelID: string): void {
+    void (async () => {
+      try {
+        const specs = readOpencodeMcpSpecs();
+        if (specs.length === 0) return;
+        const results = await measureServers(specs, modelID);
+        const latest = loadSnapshot();
+        if (!latest) return;
+        saveSnapshot({ ...latest, mcpMeasurement: results, model: modelID });
+      } catch (err) {
+        console.error("[mcp-savings] background MCP measurement failed (non-fatal):", err);
+      }
+    })();
   }
 
   return {
@@ -105,15 +135,15 @@ export const OpencodeSavingsPlugin: Plugin = async (input) => {
         lastProviderID = info.providerID;
         lastModelID = info.modelID;
 
-        // "First run" for this session: OpenCode 1.17.13 has no
-        // `mcp.tools.changed` event (see README for the discrepancy vs.
-        // the original spec), so we treat a session's first assistant
-        // message as the trigger to fetch tool weights for the first
-        // time, then persist on every subsequent token update too.
+        // OpenCode has no `mcp.tools.changed` event in this SDK version, so
+        // a session's first assistant message is our trigger to weigh tools
+        // and kick off the background MCP measurement; later messages just
+        // keep the token totals fresh.
         if (!weighedSessions.has(info.sessionID)) {
           weighedSessions.add(info.sessionID);
           const serverWeights = await refreshServerWeights(lastProviderID, lastModelID);
           persist(serverWeights);
+          refreshMcpMeasurementInBackground(lastModelID);
         } else {
           persist(undefined);
         }
@@ -121,63 +151,12 @@ export const OpencodeSavingsPlugin: Plugin = async (input) => {
       }
 
       if (event.type === "session.idle" && lastProviderID && lastModelID) {
-        // GOTCHA (documented in README): used as a practical proxy for
-        // "MCP servers may have changed" since no dedicated event exists
-        // in this SDK version — e.g. a user toggling a server via the TUI
-        // mid-session will be picked up the next time the session idles.
+        // Proxy for "MCP servers may have changed" since no dedicated event
+        // exists — picks up a server toggled mid-session on the next idle.
         const serverWeights = await refreshServerWeights(lastProviderID, lastModelID);
         persist(serverWeights);
+        refreshMcpMeasurementInBackground(lastModelID);
       }
     },
   };
 };
-
-// ---------------------------------------------------------------------------
-// TUI plugin
-// ---------------------------------------------------------------------------
-
-/**
- * Renders the session-right-hand-side panel: real input/output token
- * counts for the session plus the top MCP servers by schema weight, read
- * from the snapshot file the server plugin above keeps up to date.
- *
- * We build the element tree by calling @opentui/solid's automatic JSX
- * runtime (`jsx()`) directly instead of writing `.tsx`/JSX syntax. Solid
- * normally relies on a dedicated compiler transform (its own Babel/bun
- * plugin, see @opentui/solid/bun-plugin) to turn JSX into fine-grained
- * reactive updates — plain `tsc` cannot perform that transform. Since this
- * panel has no internal reactive state (it's a pure function of the
- * on-disk snapshot, re-invoked by the host renderer on each draw), calling
- * the same `jsx()` factory the compiler would have emitted anyway gives an
- * identical element tree while staying buildable with plain `tsc`.
- */
-function renderPanel() {
-  const snapshot = loadSnapshot();
-  const tokens = snapshot?.sessionTokens ?? EMPTY_TOKEN_USAGE;
-  const topServers = (snapshot?.serverWeights ?? []).slice(0, 3);
-
-  const lines: string[] = [
-    `tokens  in:${humanizeTokens(tokens.input)} out:${humanizeTokens(tokens.output)} cache:${humanizeTokens(
-      tokens.cacheRead + tokens.cacheWrite,
-    )}`,
-    ...topServers.map((server) => `mcp ${server.server}: ${humanizeBytes(server.bytes)} schema`),
-    "bytes != tokens; run `mcp-savings report` for the full breakdown",
-  ];
-
-  return jsx("box", {
-    flexDirection: "column",
-    children: lines.map((line) => jsx("text", { children: line })),
-  });
-}
-
-export const tui: TuiPlugin = async (api) => {
-  api.slots.register({
-    order: 0,
-    slots: {
-      session_prompt_right: () => renderPanel(),
-    },
-  });
-};
-
-/** Report shown by `formatSavingsTable` reuses the same core helper the CLI uses. */
-export { formatSavingsTable };
