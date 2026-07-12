@@ -1,6 +1,6 @@
 export type { ToolWeight, ServerWeight, TokenUsage, Snapshot } from "./types.js";
 export { EMPTY_TOKEN_USAGE } from "./types.js";
-export { weighTools, type WeighableTool } from "./weigh.js";
+export { weighTools, utf8Bytes, type WeighableTool } from "./weigh.js";
 export { attributeToServers, UNATTRIBUTED_SERVER } from "./attribute.js";
 export {
   formatSavingsTable,

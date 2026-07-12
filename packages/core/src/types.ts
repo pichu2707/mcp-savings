@@ -7,17 +7,22 @@ import type { ServerMeasurement } from "./measure.js";
  * never be mixed:
  *   - TokenUsage is REAL, provider-reported token usage (measured).
  *   - ToolWeight/ServerWeight.bytes is a LOCAL measure of serialized JSON
- *     schema size (`JSON.stringify(tool).length`). It is NOT a token count
- *     and must never be converted to tokens or dollars anywhere in this
- *     codebase — bytes and tokens are different units measured by
- *     different mechanisms (local string length vs. provider billing).
+ *     schema size, in UTF-8 bytes (see `utf8Bytes` in weigh.ts). It is NOT a
+ *     token count and must never be converted to tokens or dollars anywhere
+ *     in this codebase — bytes and tokens are different units measured by
+ *     different mechanisms (local serialization vs. provider billing).
+ *
+ * `bytes` MEANS BYTES. It is UTF-8, never UTF-16 code units (`String.length`),
+ * because OxideGate measures the same schemas as UTF-8 bytes on the wire and
+ * oxidegate-lens reports them under this same field name. Any unit drift here
+ * makes the two tools disagree silently, and only on non-ASCII input.
  */
 
 /** The serialized-schema weight of a single MCP (or built-in) tool. */
 export interface ToolWeight {
   /** Tool id as reported by the host, e.g. "mcp__github__search_issues". */
   id: string;
-  /** `JSON.stringify(toolListItem).length` — a byte-ish size, NOT tokens. */
+  /** UTF-8 byte length of `JSON.stringify(toolListItem)` — bytes, NOT tokens. */
   bytes: number;
 }
 

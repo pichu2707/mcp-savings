@@ -3,6 +3,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { countTokens } from "./tokenize.js";
+import { utf8Bytes } from "./weigh.js";
 
 const CLIENT_NAME = "mcp-savings";
 const CLIENT_VERSION = "0.1.0";
@@ -28,7 +29,7 @@ export type ServerSpec = {
 /** Per-tool schema weight, measured directly against the live MCP server. */
 export interface ToolMeasurement {
   name: string;
-  /** `JSON.stringify({name, description, inputSchema}).length` — see weigh.ts honesty note. */
+  /** UTF-8 byte length of `JSON.stringify({name, description, inputSchema})` — see weigh.ts honesty note. */
   bytes: number;
   /** `null` when the model has no accurate local tokenizer (see tokenize.ts). */
   tokens: number | null;
@@ -140,7 +141,7 @@ export async function measureServer(
       });
       return {
         name: tool.name,
-        bytes: serialized.length,
+        bytes: utf8Bytes(serialized),
         tokens: countTokens(serialized, model),
       };
     });
