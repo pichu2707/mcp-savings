@@ -41,6 +41,27 @@ pnpm install
 pnpm -r run build
 ```
 
+## OpenCode sidebar
+
+The OpenCode adapter writes a live snapshot to
+`~/.config/mcp-savings/snapshot.json`; the TUI plugin reads that snapshot and
+renders a compact sidebar panel:
+
+```text
+◢ MCP cost/request
+Active 3.8K tok · 1 ON
+Saved  975 tok
+ON  ▇▇▇▇▇▇▇▇ engram 3.8K
+OFF context7 saves 975
+Session: 13.9K in · 9 out
+```
+
+- **Active** is what currently connected MCP servers add per request.
+- **Saved** is realized savings from MCP servers that are currently off.
+- **ON/OFF** comes from OpenCode's live MCP status, not just static config.
+- **Session** is provider-reported conversation usage; it is a different metric
+  from per-request MCP schema cost.
+
 ## Typecheck
 
 ```

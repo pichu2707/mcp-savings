@@ -128,8 +128,7 @@ function computeRows(): PanelRow[] {
       kind: "bar",
       bar: server.tokens === null ? "" : makeBar(server.tokens, maxTokens, BAR_WIDTH),
       name: truncateLabel(server.server, NAME_WIDTH),
-      // "-" prefix reads as "what cutting this server would save you".
-      valueLabel: server.tokens === null ? "n/a" : `-${humanizeTokens(server.tokens)}`,
+      valueLabel: server.tokens === null ? "n/a" : humanizeTokens(server.tokens),
     });
   }
 
@@ -139,7 +138,7 @@ function computeRows(): PanelRow[] {
     rows.push({
       kind: "rollup",
       more: restEnabled.length,
-      sumLabel: sum === null ? "n/a" : `-${humanizeTokens(sum)}`,
+      sumLabel: sum === null ? "n/a" : humanizeTokens(sum),
     });
   }
 
@@ -189,27 +188,27 @@ function computeRows(): PanelRow[] {
 function renderRow(row: PanelRow) {
   switch (row.kind) {
     case "header":
-      return jsx("text", { fg: RUST_ACCENT, children: "◢ mcp savings" });
+      return jsx("text", { fg: RUST_ACCENT, children: "◢ MCP cost/request" });
     case "headline":
       return jsx("text", {
-        children: ["PAY  ", jsx("span", { fg: RUST_ACCENT, children: row.payLabel }), ` tok/req · ${row.count} srv`],
+        children: ["Active ", jsx("span", { fg: RUST_ACCENT, children: row.payLabel }), ` tok · ${row.count} ON`],
       });
     case "saved":
       return jsx("text", {
-        children: ["SAVED ", jsx("span", { fg: RUST_ACCENT, children: row.savedLabel }), " tok/req"],
+        children: ["Saved  ", jsx("span", { fg: RUST_ACCENT, children: row.savedLabel }), " tok"],
       });
     case "bar":
       return jsx("text", {
-        children: [jsx("span", { fg: RUST_ACCENT, children: row.bar }), ` ${row.name} ${row.valueLabel}`],
+        children: ["ON  ", jsx("span", { fg: RUST_ACCENT, children: row.bar }), ` ${row.name} ${row.valueLabel}`],
       });
     case "rollup":
-      return jsx("text", { children: `…+${row.more} more   ${row.sumLabel} tok` });
+      return jsx("text", { children: `ON  …+${row.more} more ${row.sumLabel} tok` });
     case "off":
-      return jsx("text", { children: `off  ${row.name} ${row.valueLabel}` });
+      return jsx("text", { children: `OFF ${row.name} saves ${row.valueLabel}` });
     case "offRollup":
-      return jsx("text", { children: `off …+${row.more} more  ${row.sumLabel} tok` });
+      return jsx("text", { children: `OFF …+${row.more} more saves ${row.sumLabel} tok` });
     case "footer":
-      return jsx("text", { children: `session in ${row.inputLabel} · out ${row.outputLabel}` });
+      return jsx("text", { children: `Session: ${row.inputLabel} in · ${row.outputLabel} out` });
     case "empty":
       return jsx("text", { children: row.text });
   }

@@ -7,6 +7,7 @@ import {
   saveSnapshot,
   SessionMeter,
   weighTools,
+  type ServerMeasurement,
   type ServerWeight,
   type Snapshot,
   type TokenUsage,
@@ -53,11 +54,39 @@ function toTokenUsage(tokens: {
  * separate module instances with no guaranteed shared memory.
  */
 export const OpencodeSavingsPlugin: Plugin = async (input) => {
-  const { client } = input;
+  const { client, directory } = input;
   const meter = new SessionMeter();
   const weighedSessions = new Set<string>();
   let lastProviderID: string | undefined;
   let lastModelID: string | undefined;
+
+  function mcpQuery(): { directory: string } | undefined {
+    return directory ? { directory } : undefined;
+  }
+
+  function liveEnabledState(status: unknown): Map<string, boolean> {
+    const states = new Map<string, boolean>();
+    if (!status || typeof status !== "object" || Array.isArray(status)) return states;
+
+    for (const [name, value] of Object.entries(status as Record<string, { status?: unknown }>)) {
+      const current = typeof value?.status === "string" ? value.status.toLowerCase() : undefined;
+      if (!current) continue;
+      if (current === "disabled" || current === "disconnected") states.set(name, false);
+      else if (current === "connected" || current === "connecting") states.set(name, true);
+    }
+    return states;
+  }
+
+  function applyLiveEnabledState(
+    measurements: ServerMeasurement[] | undefined,
+    liveStates: Map<string, boolean>,
+  ): ServerMeasurement[] | undefined {
+    if (!measurements || liveStates.size === 0) return measurements;
+    return measurements.map((measurement) => {
+      const enabled = liveStates.get(measurement.server);
+      return enabled === undefined ? measurement : { ...measurement, enabled };
+    });
+  }
 
   /**
    * Fetches the current tool list + MCP connection status and turns them
@@ -76,7 +105,7 @@ export const OpencodeSavingsPlugin: Plugin = async (input) => {
     const toolsResult = await client.tool.list({ query: { provider: providerID, model: modelID } });
     if (!toolsResult.data) return undefined;
 
-    const statusResult = await client.mcp.status();
+    const statusResult = await client.mcp.status({ query: mcpQuery() });
     const serverNames = statusResult.data ? Object.keys(statusResult.data) : [];
 
     const weights = weighTools(toolsResult.data);
@@ -119,7 +148,9 @@ export const OpencodeSavingsPlugin: Plugin = async (input) => {
         // accepted (it's the only way to get a REALIZED savings number).
         const specs = readOpencodeMcpSpecs();
         if (specs.length === 0) return;
-        const results = await measureServers(specs, modelID);
+        const statusResult = await client.mcp.status({ query: mcpQuery() });
+        const liveStates = liveEnabledState(statusResult.data);
+        const results = applyLiveEnabledState(await measureServers(specs, modelID), liveStates);
         const latest = loadSnapshot();
         if (!latest) return;
         saveSnapshot({ ...latest, mcpMeasurement: results, model: modelID });
