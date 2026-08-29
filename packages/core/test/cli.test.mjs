@@ -221,6 +221,65 @@ test("a flag with no value is ignored rather than crashing", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Authorship and version footer
+// ---------------------------------------------------------------------------
+
+test("the reporting commands end with the version and the author", async () => {
+  // --help is read once; these are read daily. The version is there because
+  // it is the first thing anyone is asked for in a bug report.
+  const config = opencodeConfig({
+    fixture: { command: `${process.execPath} ${MCP_FIXTURE} --tools 1` },
+  });
+
+  const [measure, report] = await Promise.all([
+    run("measure", "--config", config),
+    run("report"),
+  ]);
+
+  for (const { stdout } of [measure, report]) {
+    assert.match(stdout, /\nmcp-savings v\d+\.\d+\.\d+ · by Javi Lázaro · MIT\n?$/);
+  }
+});
+
+test("the footer's version is the package's own", async () => {
+  // It reuses measure.ts's CLIENT_VERSION rather than keeping a second copy,
+  // so the drift guard already covering that constant covers this too.
+  const { version } = JSON.parse(
+    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  );
+  const config = opencodeConfig({
+    fixture: { command: `${process.execPath} ${MCP_FIXTURE} --tools 1` },
+  });
+  const { stdout } = await run("measure", "--config", config);
+
+  assert.match(stdout, new RegExp(`mcp-savings v${version.replace(/\./g, "\\.")} · by Javi Lázaro`));
+});
+
+test("a one-line \"nothing to measure\" answer gets no footer either", async () => {
+  // Consistent with `list` and `disable`: the footer belongs under a report,
+  // not under a sentence. Pinned because the early return that produces this
+  // is easy to lose track of when the command grows.
+  const { stdout } = await run("measure", "--config", opencodeConfig({}));
+
+  assert.match(stdout, /No MCP servers found/);
+  assert.doesNotMatch(stdout, /by Javi Lázaro/);
+});
+
+test("one-line commands get no footer", async () => {
+  // A byline under a single-line answer is noise, not credit.
+  const [list, disable] = await Promise.all([run("list"), run("disable", "footer-test")]);
+
+  assert.doesNotMatch(list.stdout, /by Javi Lázaro/);
+  assert.doesNotMatch(disable.stdout, /by Javi Lázaro/);
+});
+
+test("--help carries the author too, above the usage", async () => {
+  const { stdout } = await run("--help");
+
+  assert.match(stdout, /^mcp-savings — measure MCP server token\/schema cost in AI coding agents\nby Javi Lázaro · MIT · https:\/\/github\.com\/pichu2707\/mcp-savings\n/);
+});
+
+// ---------------------------------------------------------------------------
 // --host: which host's config to discover servers from
 // ---------------------------------------------------------------------------
 

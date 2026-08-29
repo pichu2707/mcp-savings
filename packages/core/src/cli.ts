@@ -3,7 +3,7 @@ import { EMPTY_TOKEN_USAGE } from "./types.js";
 import { formatWeightTable, formatMeasurementTable, humanizeBytes, humanizeTokens } from "./report.js";
 import { isMeasurementFresh, loadConfig, loadSnapshot, setServerDisabledByDefault } from "./config.js";
 import { splitPayAndSaved } from "./savings.js";
-import { measureServers, type ServerMeasurement } from "./measure.js";
+import { CLIENT_VERSION, measureServers, type ServerMeasurement } from "./measure.js";
 import { readOpencodeMcpSpecs } from "./opencodeConfig.js";
 import { readClaudeCodeMcpSpecs } from "./claudeCodeConfig.js";
 import { readClaudeCodeSessionTokens } from "./claudeCodeSessions.js";
@@ -147,6 +147,7 @@ async function printReport(): Promise<void> {
 
   // --- Cost/savings summary, derived from the MCP measurement above -------
   printPayAndSaved(mcpResults);
+  printFooter();
 }
 
 function printList(): void {
@@ -175,6 +176,19 @@ function parseFlags(args: readonly string[], flagNames: readonly string[]): Reco
     i++;
   }
   return flags;
+}
+
+/**
+ * Printed after the two commands that produce a report. Carries the version
+ * because it is the first thing anyone is asked for in a bug report, and the
+ * author because `--help` is read once while these are read daily.
+ *
+ * Deliberately not printed by `list`, `disable` or `enable`: those answer a
+ * question in one line, and a footer under a one-line answer is noise.
+ */
+function printFooter(): void {
+  console.log("");
+  console.log(`mcp-savings v${CLIENT_VERSION} · by Javi Lázaro · MIT`);
 }
 
 const HOSTS = ["opencode", "claude-code"] as const;
@@ -210,6 +224,7 @@ async function printMeasure(
   console.log("");
 
   printPayAndSaved(results);
+  printFooter();
 }
 
 /**
@@ -248,6 +263,7 @@ async function printClaudeCodeReport(configPath: string | undefined): Promise<vo
   console.log(formatMeasurementTable(results, DEFAULT_MODEL));
   console.log("");
   printPayAndSaved(results);
+  printFooter();
 }
 
 async function main(argv: string[]): Promise<void> {

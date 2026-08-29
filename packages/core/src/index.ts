@@ -29,6 +29,7 @@ export {
   type ServerSpec,
   type ToolMeasurement,
   type ServerMeasurement,
+  CLIENT_VERSION,
   measureServer,
   measureServers,
 } from "./measure.js";

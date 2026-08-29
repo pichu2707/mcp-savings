@@ -1,6 +1,6 @@
 {
   "name": "@javilazaro/mcp-savings-core",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "type": "module",
   "description": "Pure domain logic for measuring MCP server token/schema cost in AI coding agents.",
   "keywords": [

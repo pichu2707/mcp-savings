@@ -13,9 +13,12 @@ import { utf8Bytes } from "./weigh.js";
  * it is duplicated — and measure.test.mjs asserts the two agree, which
  * turns a silent drift into a failing test on the release that forgets
  * it. It had already drifted: 0.1.0 while the package shipped 0.2.0.
+ *
+ * Exported so the CLI's footer can show the same value rather than keeping
+ * a second copy that would need its own guard.
  */
 const CLIENT_NAME = "mcp-savings";
-const CLIENT_VERSION = "0.7.0";
+export const CLIENT_VERSION = "0.7.1";
 const DEFAULT_TIMEOUT_MS = 8000;
 const DEFAULT_CONCURRENCY = 3;
 
