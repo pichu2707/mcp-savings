@@ -34,4 +34,9 @@ export {
 } from "./measure.js";
 export { readOpencodeMcpSpecs } from "./opencodeConfig.js";
 export { readClaudeCodeMcpSpecs } from "./claudeCodeConfig.js";
+export {
+  readClaudeCodeSessionTokens,
+  type SessionUsage,
+  type SessionTokensOptions,
+} from "./claudeCodeSessions.js";
 export { toServerSpec, expandHome, type McpEntry } from "./hostConfig.js";

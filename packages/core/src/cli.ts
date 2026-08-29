@@ -6,6 +6,7 @@ import { splitPayAndSaved } from "./savings.js";
 import { measureServers, type ServerMeasurement } from "./measure.js";
 import { readOpencodeMcpSpecs } from "./opencodeConfig.js";
 import { readClaudeCodeMcpSpecs } from "./claudeCodeConfig.js";
+import { readClaudeCodeSessionTokens } from "./claudeCodeSessions.js";
 import { DEFAULT_MODEL } from "./tokenize.js";
 
 const HELP = `mcp-savings — measure MCP server token/schema cost in AI coding agents
@@ -16,6 +17,7 @@ Usage:
                                    MCP servers (measured live if the snapshot
                                    is missing or stale), and host built-in
                                    tools
+    --host <host>                opencode (default) or claude-code
   mcp-savings list               List configured servers and their disabledByDefault flag
   mcp-savings disable <server>   Mark a server as disabled-by-default
   mcp-savings enable <server>    Clear a server's disabled-by-default flag
@@ -210,13 +212,60 @@ async function printMeasure(
   printPayAndSaved(results);
 }
 
+/**
+ * `report` for Claude Code. There is no snapshot to read — no adapter runs
+ * inside it — so session usage comes from the transcripts on disk and the
+ * MCP measurement is taken live.
+ */
+async function printClaudeCodeReport(configPath: string | undefined): Promise<void> {
+  const { sessions, totals } = readClaudeCodeSessionTokens(
+    configPath === undefined ? {} : { claudeDir: configPath },
+  );
+
+  console.log("=== Session token usage (real, provider-reported) ===");
+  if (sessions.length === 0) {
+    console.log("No Claude Code session has been active in the last 30 minutes.");
+  } else {
+    console.log(`From ${sessions.length} recently active session(s):`);
+    for (const session of sessions) {
+      console.log(`  ${session.sessionId.slice(0, 8)}  ${session.project}`);
+    }
+  }
+  console.log(`  input:       ${humanizeTokens(totals.input)}`);
+  console.log(`  output:      ${humanizeTokens(totals.output)}`);
+  console.log(`  reasoning:   ${humanizeTokens(totals.reasoning)}`);
+  console.log(`  cache read:  ${humanizeTokens(totals.cacheRead)}`);
+  console.log(`  cache write: ${humanizeTokens(totals.cacheWrite)}`);
+  console.log("");
+
+  console.log("=== MCP servers (measured directly from each server) ===");
+  const specs = readSpecsFor("claude-code", configPath);
+  if (specs.length === 0) {
+    console.log('No MCP servers found for host "claude-code" (or its config doesn\'t exist).');
+    return;
+  }
+  const results = await measureServers(specs, DEFAULT_MODEL);
+  console.log(formatMeasurementTable(results, DEFAULT_MODEL));
+  console.log("");
+  printPayAndSaved(results);
+}
+
 async function main(argv: string[]): Promise<void> {
   const [command, ...rest] = argv;
 
   switch (command) {
-    case "report":
-      await printReport();
+    case "report": {
+      const flags = parseFlags(rest, ["host", "config"]);
+      const host = flags.host ?? "opencode";
+      if (!HOSTS.includes(host as Host)) {
+        console.error(`Unknown host: ${host}. Expected one of: ${HOSTS.join(", ")}`);
+        process.exitCode = 1;
+        return;
+      }
+      if (host === "claude-code") await printClaudeCodeReport(flags.config);
+      else await printReport();
       return;
+    }
     case "list":
       printList();
       return;

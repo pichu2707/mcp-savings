@@ -103,9 +103,13 @@ of an error. That matters more than it sounds: an unmeasurable server counts
 toward neither PAY nor SAVED, so its schema silently leaves the report. On
 one real fleet that hid 51.6 KB of the 73.7 KB actually being sent.
 
-A full Claude Code adapter — reporting live session tokens the way the
-OpenCode plugin does — is not implemented yet. Pi and OpenClaw adapters are
-planned. `@javilazaro/mcp-savings-core` was built host-agnostic specifically
+`report --host claude-code` also reports real session token usage, read from
+the JSONL transcripts Claude Code writes per session. Note the word ACTIVE:
+Claude Code leaves no open-session marker on disk, so sessions written to
+within the last 30 minutes are what gets counted. A session left open and
+idle past that drops out.
+
+Pi and OpenClaw adapters are planned. `@javilazaro/mcp-savings-core` was built host-agnostic specifically
 so those can reuse the same weighing, attribution and reporting logic.
 
 ## OpenCode sidebar
@@ -137,6 +141,7 @@ mcp-savings' own `disabledByDefault` does not change the SAVED figure.
 
 ```
 mcp-savings report              Session tokens, MCP servers, and host built-ins
+  --host <host>                 opencode (default) or claude-code
 mcp-savings measure             Connect to each configured MCP server and weigh it
   --host <host>                 opencode (default) or claude-code
   --model <model>               Model to tokenize against

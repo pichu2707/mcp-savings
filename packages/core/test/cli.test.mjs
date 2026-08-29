@@ -284,6 +284,63 @@ test("an empty Claude Code install says which host it looked at", async () => {
 // report
 // ---------------------------------------------------------------------------
 
+test("report --host claude-code reads session tokens off the transcripts", async () => {
+  // Claude Code runs no adapter, so there is no snapshot: usage comes from
+  // the JSONL transcripts on disk and the MCP measurement is taken live.
+  const dir = join(home, `cc-report-${Math.random().toString(36).slice(2)}`);
+  mkdirSync(join(dir, "projects", "someproject"), { recursive: true });
+  writeFileSync(
+    join(dir, "projects", "someproject", "sess-1.jsonl"),
+    JSON.stringify({
+      uuid: "u",
+      message: {
+        id: "m1",
+        usage: {
+          input_tokens: 13_900,
+          output_tokens: 9,
+          cache_read_input_tokens: 512,
+          cache_creation_input_tokens: 64,
+          output_tokens_details: { thinking_tokens: 4 },
+        },
+      },
+    }),
+    "utf8",
+  );
+  mkdirSync(join(dir, "mcp"), { recursive: true });
+  writeFileSync(
+    join(dir, "mcp", "fixture.json"),
+    JSON.stringify({ command: process.execPath, args: [MCP_FIXTURE, "--tools", "2"] }),
+    "utf8",
+  );
+
+  const { stdout, code } = await run("report", "--host", "claude-code", "--config", dir);
+
+  assert.equal(code, 0);
+  assert.match(stdout, /From 1 recently active session\(s\)/);
+  assert.match(stdout, /sess-1 {2}someproject/, "it names which session it counted");
+  assert.match(stdout, /input: +13\.9K/);
+  assert.match(stdout, /reasoning: +4/, "thinking_tokens became reasoning");
+  assert.match(stdout, /\| fixture +\| +yes \|/, "and the MCP servers were measured too");
+});
+
+test("report --host claude-code says so when nothing has been active", async () => {
+  const dir = join(home, "cc-idle");
+  mkdirSync(dir, { recursive: true });
+
+  const { stdout, code } = await run("report", "--host", "claude-code", "--config", dir);
+
+  assert.equal(code, 0);
+  assert.match(stdout, /No Claude Code session has been active in the last 30 minutes/);
+  assert.match(stdout, /input: +0/, "and the totals are still shown as real zeros");
+});
+
+test("report rejects an unknown host the same way measure does", async () => {
+  const { stderr, code } = await run("report", "--host", "emacs");
+
+  assert.equal(code, 1);
+  assert.match(stderr, /Unknown host: emacs/);
+});
+
 test("report explains itself when no host has ever run", async () => {
   // The first thing a new user sees. It has to say what to do next rather
   // than printing an empty table.
