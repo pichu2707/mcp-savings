@@ -1,7 +1,7 @@
 import type { TuiPlugin } from "@opencode-ai/plugin/tui";
 import { jsx } from "@opentui/solid/jsx-runtime";
 import { createSignal, onCleanup } from "solid-js";
-import { EMPTY_TOKEN_USAGE, humanizeTokens, loadSnapshot, type ServerMeasurement } from "@mcp-savings/core";
+import { EMPTY_TOKEN_USAGE, humanizeTokens, loadSnapshot, type ServerMeasurement } from "@javilazaro/mcp-savings-core";
 import { makeBar, RUST_ACCENT, truncateLabel } from "./render.js";
 import { registerReportCommand } from "./command.js";
 

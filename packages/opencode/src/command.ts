@@ -10,7 +10,7 @@ import {
   readOpencodeMcpSpecs,
   type ServerMeasurement,
   type Snapshot,
-} from "@mcp-savings/core";
+} from "@javilazaro/mcp-savings-core";
 import { makeBar, RUST_ACCENT, truncateLabel } from "./render.js";
 
 /**
@@ -31,7 +31,7 @@ const DIALOG_NAME_WIDTH = 24;
  * Mirrors cli.ts's `MCP_MEASUREMENT_TTL_MS`: a persisted `mcpMeasurement` is
  * trusted for 1 hour (matches `snapshot.timestamp`'s refresh cadence — see
  * plugin.ts's `persist()`) before we re-measure live instead of showing a
- * stale one. Not exported from @mcp-savings/core (it's cli.ts-local), so
+ * stale one. Not exported from @javilazaro/mcp-savings-core (it's cli.ts-local), so
  * duplicated here rather than reaching into cli.ts's internals — see
  * cli.ts's own comment for the full reasoning.
  */

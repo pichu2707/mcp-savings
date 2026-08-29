@@ -26,7 +26,7 @@ importers:
 
   packages/opencode:
     dependencies:
-      '@mcp-savings/core':
+      '@javilazaro/mcp-savings-core':
         specifier: workspace:*
         version: link:../core
       '@opentui/solid':

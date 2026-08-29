@@ -1,9 +1,34 @@
 {
-  "name": "@mcp-savings/opencode",
+  "name": "@javilazaro/mcp-savings-opencode",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "description": "OpenCode host adapter for mcp-savings: measures real token usage and MCP tool schema weight from inside a running OpenCode session.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "opencode",
+    "opencode-plugin",
+    "tokens",
+    "token-cost",
+    "tui"
+  ],
+  "license": "MIT",
+  "author": "Javi Lázaro",
+  "homepage": "https://github.com/pichu2707/mcp-savings#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pichu2707/mcp-savings.git",
+    "directory": "packages/opencode"
+  },
+  "bugs": {
+    "url": "https://github.com/pichu2707/mcp-savings/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/plugin.js",
   "types": "./dist/plugin.d.ts",
   "exports": {
@@ -17,10 +42,11 @@
   ],
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json"
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
-    "@mcp-savings/core": "workspace:*",
+    "@javilazaro/mcp-savings-core": "workspace:*",
     "@opentui/solid": "0.4.3"
   },
   "devDependencies": {

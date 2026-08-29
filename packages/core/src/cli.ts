@@ -23,7 +23,7 @@ Usage:
                                   (default: ~/.config/opencode/opencode.json)
   mcp-savings --help             Show this help
 
-Snapshots are written by a running host adapter (e.g. @mcp-savings/opencode)
+Snapshots are written by a running host adapter (e.g. @javilazaro/mcp-savings-opencode)
 to ~/.config/mcp-savings/snapshot.json. Run a host with the adapter plugin
 installed before expecting \`report\` to have data.
 
@@ -151,7 +151,7 @@ async function printReport(): Promise<void> {
     console.log(`Snapshot taken: ${new Date(snapshot.timestamp).toISOString()}`);
   } else {
     console.log("No snapshot yet — run a host adapter (e.g. OpenCode with");
-    console.log("@mcp-savings/opencode installed) to start capturing real session tokens.");
+    console.log("@javilazaro/mcp-savings-opencode installed) to start capturing real session tokens.");
   }
   const sessionTokens = snapshot?.sessionTokens ?? EMPTY_TOKEN_USAGE;
   console.log(`  input:       ${humanizeTokens(sessionTokens.input)}`);
