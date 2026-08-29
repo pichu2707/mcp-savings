@@ -43,6 +43,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
+    "test": "node --test test/*.test.mjs",
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
