@@ -7,7 +7,7 @@ By [Javi Lázaro](https://github.com/pichu2707) · MIT
 Two numbers, deliberately never added together:
 
 - **PAY** — what your currently connected MCP servers add to every request.
-- **SAVED** — what servers you have already turned off have stopped costing you.
+- **SAVED** — what servers you already turned off have stopped costing you.
 
 Their sum is a bigger, more impressive figure that describes nothing you can
 act on: you cannot save what you are still paying, and you are not paying for
@@ -51,6 +51,14 @@ npx @javilazaro/mcp-savings-core --help
   request. mcp-savings never runs an authorization flow, never refreshes, and
   never writes to that file. A server that has NOT been authorised reports as
   an error rather than being silently counted as free.
+- **"Per request" means context occupied, not money billed.** A tool schema
+  sits in the context window of every request, and that is what these numbers
+  size. With prompt caching it is usually WRITTEN once and read back cheaply
+  after, and a cache read is not priced like fresh input — so 17K tokens per
+  request is 17K of your context window every time, but not 17K of new input
+  every time. The distinction matters: on one real session, 105.4M cache-read
+  tokens against 586.1K written. Nothing here converts either into a cost,
+  deliberately, because only your provider's pricing can do that honestly.
 - **OpenCode's `/experimental/tool` endpoint is unstable** and may change or
   disappear in future OpenCode releases without notice.
 
@@ -86,9 +94,15 @@ where they helped and one measured case where they hurt.
   adapter, a dual-export OpenCode plugin (an `event`-hook server plugin plus
   a `tui` panel plugin) that measures a live OpenCode session.
 
-`measure --host claude-code` works today with no plugin installed: Claude
-Code keeps its MCP servers on disk, so they can simply be read. Servers come
-from two places, and both are honoured —
+Pi and OpenClaw adapters are planned. `@javilazaro/mcp-savings-core` was
+built host-agnostic specifically so those can reuse the same weighing,
+attribution and reporting logic.
+
+## Claude Code
+
+`--host claude-code` works today with no plugin installed: Claude Code keeps
+everything on disk, so it can simply be read. MCP servers come from two
+places, and both are honoured —
 
 - `~/.claude/mcp/<server>.json`, one file per user-added server, where the
   filename is the server name.
@@ -108,9 +122,6 @@ the JSONL transcripts Claude Code writes per session. Note the word ACTIVE:
 Claude Code leaves no open-session marker on disk, so sessions written to
 within the last 30 minutes are what gets counted. A session left open and
 idle past that drops out.
-
-Pi and OpenClaw adapters are planned. `@javilazaro/mcp-savings-core` was built host-agnostic specifically
-so those can reuse the same weighing, attribution and reporting logic.
 
 ## OpenCode sidebar
 
@@ -140,20 +151,24 @@ mcp-savings' own `disabledByDefault` does not change the SAVED figure.
 ## CLI
 
 ```
-mcp-savings report              Session tokens, MCP servers, and host built-ins
-  --host <host>                 opencode (default) or claude-code
-mcp-savings measure             Connect to each configured MCP server and weigh it
-  --host <host>                 opencode (default) or claude-code
-  --model <model>               Model to tokenize against
-  --config <path>               The host's config path
-mcp-savings list                List configured servers and their flags
-mcp-savings disable <server>    Mark a server as disabled-by-default
-mcp-savings enable <server>     Clear that flag
+mcp-savings report            Session tokens, MCP servers, host built-ins
+  --host <host>               opencode (default) or claude-code
+  --config <path>             The host's config path
+mcp-savings measure           Connect to each MCP server and weigh it
+  --host <host>               opencode (default) or claude-code
+  --model <model>             Model to tokenize against
+  --config <path>             The host's config path
+mcp-savings list              List configured servers and their flags
+mcp-savings disable <server>  Mark a server as disabled-by-default
+mcp-savings enable <server>   Clear that flag
 ```
 
-`report` reads the snapshot a running host adapter writes to
-`~/.config/mcp-savings/snapshot.json`, re-measuring live if it is missing or
-more than an hour old. `list`/`disable`/`enable` manage per-server config at
+For OpenCode, `report` reads the snapshot a running host adapter writes to
+`~/.config/mcp-savings/snapshot.json`, re-measuring live if that snapshot is
+missing or more than an hour old. For Claude Code there is no adapter and no
+snapshot, so it reads the transcripts instead and measures live every time.
+
+`list`/`disable`/`enable` manage per-server config at
 `~/.config/mcp-savings/config.json`.
 
 `measure` needs no running host: it connects to each MCP server directly.
@@ -169,9 +184,10 @@ pnpm -r run typecheck
 pnpm -r run test
 ```
 
-Tests run against real MCP servers, not mocks — see
-`packages/core/test/fixtures/` for a stdio server, an environment probe, and
-an authenticated HTTP server.
+Tests run against real MCP servers rather than mocks. `test/fixtures/` holds
+three of them: a stdio server, one that names its only tool after an
+environment variable so a dropped variable becomes visible, and an HTTP
+server behind a genuine 401.
 
 ## License
 
