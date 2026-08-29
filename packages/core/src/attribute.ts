@@ -2,23 +2,38 @@ import type { ServerWeight, ToolWeight } from "./types.js";
 
 /**
  * ============================================================================
- * UNVERIFIED HEURISTIC — tool -> MCP server attribution
+ * Tool -> MCP server attribution, by id prefix
  * ============================================================================
- * OpenCode's tool list endpoint (`client.tool.list`) returns
- * `{id, description, parameters}` with NO field that names the owning MCP
- * server. The only way to guess which server a tool came from is its `id`.
+ * A host's tool list gives `{id, description, parameters}` with NO field
+ * naming the owning MCP server. The only signal is the id, so MCP-sourced
+ * tools are recognised by the server-name prefix hosts put there:
  *
- * Observed/expected OpenCode tool id conventions (as of the SDK version this
- * package was written against): MCP-sourced tools are prefixed with the
- * server name, typically joined by a double underscore, e.g.
- *   "mcp__github__search_issues"  -> server "github"
- *   "github_search_issues"        -> server "github" (single-underscore variant)
+ *   "mcp__github__search_issues" -> server "github"
+ *   "mcp_github_search_issues"   -> server "github"
  *
- * This has NOT been verified against a live OpenCode instance with real MCP
- * servers attached — it is a best-effort guess based on common MCP host
- * conventions (Claude Desktop / Claude Code use similar `server_tool` or
- * `mcp__server__tool` shapes). RUNTIME-VERIFY this against actual
- * `client.tool.list()` output before trusting the attribution in a report.
+ * VERIFIED against a live OpenCode 1.18.25 instance (createOpencodeServer,
+ * with context7 and engram both reporting `connected`), and the result was
+ * not what this file originally assumed:
+ *
+ *   1. OpenCode's tool endpoints return ONLY built-ins. `/experimental/tool`
+ *      gave 15 tools and `/experimental/tool/ids` gave 18, and not one came
+ *      from an MCP server — even though a direct MCP connection to those
+ *      same two servers found 20 tools worth ~22 KB. So for OpenCode this
+ *      attribution currently files everything under UNATTRIBUTED_SERVER,
+ *      and the real MCP numbers come from measure.ts instead (see
+ *      plugin.ts's `refreshMcpMeasurementInBackground`). Kept because the
+ *      canonical prefix is real elsewhere — Claude Code names its MCP tools
+ *      exactly `mcp__<server>__<tool>`.
+ *
+ *   2. The looser `<server>_` and `<server>__` prefixes this file used to
+ *      accept were REMOVED. They had no confirmed case where they helped —
+ *      no known host emits a bare `server_tool` id — and one measured case
+ *      where they hurt: against OpenCode's real list, a server named
+ *      "delegation" captured the genuine built-ins `delegation_read` and
+ *      `delegation_list` and was credited 633 B it does not cost. A user
+ *      would be told that disabling it saves 633 B; it saves nothing.
+ *      Only the two `mcp`-anchored forms remain, and both close the prefix
+ *      with a delimiter, so they cannot swallow a longer server's tool.
  *
  * Tools that don't match any configured server name are bucketed under
  * UNATTRIBUTED_SERVER (usually built-in host tools like `bash`, `edit`,
@@ -27,12 +42,12 @@ import type { ServerWeight, ToolWeight } from "./types.js";
  * budget is MCP vs. built-in").
  *
  * Matching is LONGEST-PREFIX-WINS across every configured server, not
- * first-server-wins. Server names collide in practice — a base server and its
- * specialised companion (`notion` / `notion_db`, `vercel` / `vercel_ai`) — and
- * the loose single-underscore fallback `notion_` matches an id that really
- * belongs to `notion_db`. Deciding that by config order files the bytes under
- * the wrong server, and because the totals still add up the report looks
- * perfectly healthy while describing the wrong world.
+ * first-server-wins. Server names collide in practice — a base server and
+ * its specialised companion (`notion` / `notion_db`, `vercel` / `vercel_ai`)
+ * — and `mcp_notion_` still matches an id that really belongs to
+ * `notion_db`. Deciding that by config order files the bytes under the wrong
+ * server, and because the totals still add up the report looks perfectly
+ * healthy while describing the wrong world.
  *
  * If you add/rename MCP servers with unusual naming, adjust
  * `candidatePrefixesFor` below rather than the matching loop.
@@ -41,15 +56,16 @@ import type { ServerWeight, ToolWeight } from "./types.js";
 
 export const UNATTRIBUTED_SERVER = "(built-in / unattributed)";
 
-/** The id-prefix patterns a single server can be recognised by. */
+/**
+ * The id-prefix patterns a single server can be recognised by.
+ *
+ * Both are anchored on `mcp` and closed by a delimiter. A bare `<server>_`
+ * was deliberately dropped — see point 2 in the note above: it matched real
+ * built-in tools and there is no host known to need it.
+ */
 function candidatePrefixesFor(serverName: string): string[] {
   const lower = serverName.toLowerCase();
-  return [
-    `mcp__${lower}__`,
-    `mcp_${lower}_`,
-    `${lower}__`,
-    `${lower}_`,
-  ];
+  return [`mcp__${lower}__`, `mcp_${lower}_`];
 }
 
 interface PrefixCandidate {

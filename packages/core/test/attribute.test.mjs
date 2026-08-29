@@ -50,14 +50,13 @@ test("attributes the canonical mcp__server__tool form", () => {
   assert.equal(filing(result)["mcp__github__search_issues"], "github");
 });
 
-test("attributes the documented single-underscore variants", () => {
-  // All four shapes candidatePrefixesFor() promises to recognise.
+test("attributes both mcp-anchored prefix forms", () => {
+  // The two shapes candidatePrefixesFor() recognises. Both are anchored on
+  // `mcp` and closed by a delimiter.
   const result = attributeToServers(
     [
       { id: "mcp__github__a", bytes: 10 },
       { id: "mcp_github_b", bytes: 10 },
-      { id: "github__c", bytes: 10 },
-      { id: "github_d", bytes: 10 },
     ],
     ["github"],
   );
@@ -65,9 +64,44 @@ test("attributes the documented single-underscore variants", () => {
   assert.deepEqual(filing(result), {
     "mcp__github__a": "github",
     "mcp_github_b": "github",
-    "github__c": "github",
-    "github_d": "github",
   });
+});
+
+test("a bare `<server>_` prefix is NOT a match", () => {
+  // REGRESSION. These loose forms used to be accepted on the assumption that
+  // some host emitted them. Verified against a live OpenCode: no host does,
+  // and accepting them captured real built-in tools instead. See the next
+  // test for the measured case.
+  const result = attributeToServers(
+    [
+      { id: "github_search", bytes: 10 },
+      { id: "github__search", bytes: 10 },
+    ],
+    ["github"],
+  );
+
+  assert.deepEqual(filing(result), {
+    "github_search": UNATTRIBUTED_SERVER,
+    "github__search": UNATTRIBUTED_SERVER,
+  });
+});
+
+test("REGRESSION: a server name cannot capture OpenCode's real built-in tools", () => {
+  // The measured case that removed the loose prefixes. `delegation_read` and
+  // `delegation_list` are genuine OpenCode built-ins — taken from a live
+  // /experimental/tool/ids response, not invented. Under the old heuristic a
+  // server named "delegation" was credited their bytes, and a user would be
+  // told that disabling it saves something it does not cost.
+  const builtins = [
+    { id: "delegate", bytes: 200 },
+    { id: "delegation_read", bytes: 300 },
+    { id: "delegation_list", bytes: 333 },
+  ];
+
+  const result = attributeToServers(builtins, ["delegation"]);
+
+  assert.equal(bucket(result, "delegation"), undefined, "no built-in may be attributed to it");
+  assert.equal(bucket(result, UNATTRIBUTED_SERVER).bytes, 833, "all of it stays built-in");
 });
 
 test("matches tool ids case-insensitively but reports the configured casing", () => {
@@ -126,29 +160,31 @@ test("a tool whose server is no longer configured is unattributed, not dropped",
 
 test("the longest matching server name wins, not the first one configured", () => {
   // The collision that matters: one server's name is a prefix of another's.
-  // "notion_db_query" belongs to "notion_db". But "notion_" also matches it,
-  // so whichever server the host happens to list first takes the bytes.
+  // "mcp_notion_db_query" belongs to "notion_db". But "mcp_notion_" also
+  // matches it, so whichever server the host happens to list first takes the
+  // bytes.
   //
   // This is not hypothetical naming — sibling servers like `vercel` /
   // `vercel_ai`, or `notion` / `notion_db`, are exactly how people name a
   // base server and its specialised companion.
-  const tools = [{ id: "notion_db_query", bytes: 100 }];
+  const tools = [{ id: "mcp_notion_db_query", bytes: 100 }];
 
   assert.equal(
-    filing(attributeToServers(tools, ["notion", "notion_db"]))["notion_db_query"],
+    filing(attributeToServers(tools, ["notion", "notion_db"]))["mcp_notion_db_query"],
     "notion_db",
-    "notion_db_ is a longer, more specific match than notion_ and must win",
+    "mcp_notion_db_ is longer and more specific than mcp_notion_ and must win",
   );
 });
 
 test("attribution does not depend on the order servers are configured in", () => {
   // The property that makes the previous test more than a single fixture:
   // a tool's owner is a fact about the id, not about map iteration order.
-  const tools = [{ id: "notion_db_query", bytes: 100 }];
+  const tools = [{ id: "mcp_notion_db_query", bytes: 100 }];
 
   const forwards = filing(attributeToServers(tools, ["notion", "notion_db"]));
   const backwards = filing(attributeToServers(tools, ["notion_db", "notion"]));
 
+  assert.equal(forwards["mcp_notion_db_query"], "notion_db", "and it must be the right one");
   assert.deepEqual(
     forwards,
     backwards,
