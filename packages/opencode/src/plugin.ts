@@ -7,36 +7,12 @@ import {
   saveSnapshot,
   SessionMeter,
   weighTools,
-  type ServerMeasurement,
   type ServerWeight,
   type Snapshot,
-  type TokenUsage,
 } from "@javilazaro/mcp-savings-core";
+import { applyLiveEnabledState, liveEnabledState, toTokenUsage } from "./adapt.js";
 
 const HOST = "opencode";
-
-/**
- * Maps OpenCode's AssistantMessage/StepFinishPart `tokens` shape to the
- * host-agnostic TokenUsage shape used by @javilazaro/mcp-savings-core.
- *
- * HONESTY NOTE: every field here comes straight from the provider's own
- * usage accounting (OpenCode just forwards it) — these are real, measured
- * tokens, not estimates.
- */
-function toTokenUsage(tokens: {
-  input: number;
-  output: number;
-  reasoning: number;
-  cache: { read: number; write: number };
-}): TokenUsage {
-  return {
-    input: tokens.input,
-    output: tokens.output,
-    reasoning: tokens.reasoning,
-    cacheRead: tokens.cache.read,
-    cacheWrite: tokens.cache.write,
-  };
-}
 
 /**
  * The SERVER plugin — referenced by opencode.json.
@@ -62,30 +38,6 @@ export const OpencodeSavingsPlugin: Plugin = async (input) => {
 
   function mcpQuery(): { directory: string } | undefined {
     return directory ? { directory } : undefined;
-  }
-
-  function liveEnabledState(status: unknown): Map<string, boolean> {
-    const states = new Map<string, boolean>();
-    if (!status || typeof status !== "object" || Array.isArray(status)) return states;
-
-    for (const [name, value] of Object.entries(status as Record<string, { status?: unknown }>)) {
-      const current = typeof value?.status === "string" ? value.status.toLowerCase() : undefined;
-      if (!current) continue;
-      if (current === "disabled" || current === "disconnected") states.set(name, false);
-      else if (current === "connected" || current === "connecting") states.set(name, true);
-    }
-    return states;
-  }
-
-  function applyLiveEnabledState(
-    measurements: ServerMeasurement[] | undefined,
-    liveStates: Map<string, boolean>,
-  ): ServerMeasurement[] | undefined {
-    if (!measurements || liveStates.size === 0) return measurements;
-    return measurements.map((measurement) => {
-      const enabled = liveStates.get(measurement.server);
-      return enabled === undefined ? measurement : { ...measurement, enabled };
-    });
   }
 
   /**
