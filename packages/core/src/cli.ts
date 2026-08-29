@@ -9,6 +9,7 @@ import { readClaudeCodeMcpSpecs } from "./claudeCodeConfig.js";
 import { DEFAULT_MODEL } from "./tokenize.js";
 
 const HELP = `mcp-savings — measure MCP server token/schema cost in AI coding agents
+by Javi Lázaro · MIT · https://github.com/pichu2707/mcp-savings
 
 Usage:
   mcp-savings report              Print the unified view: real session tokens,

@@ -143,6 +143,9 @@ function buildReportContent(snapshot: Snapshot | undefined, resolved: ResolvedMe
           }),
         ]
       : []),
+    // Byline last, so it never competes with the numbers above it.
+    jsx("text", { children: "" }),
+    jsx("text", { children: "mcp-savings by Javi Lázaro · MIT" }),
   ];
 
   return jsx("scrollbox", { flexDirection: "column", children: rows });

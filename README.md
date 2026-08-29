@@ -2,6 +2,8 @@
 
 Measures what MCP servers cost you, per request, in AI coding agents.
 
+By [Javi Lázaro](https://github.com/pichu2707) · MIT
+
 Two numbers, deliberately never added together:
 
 - **PAY** — what your currently connected MCP servers add to every request.
