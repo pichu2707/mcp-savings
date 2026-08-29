@@ -3,23 +3,23 @@
   "compilerOptions": {
     // Deliberately does NOT extend ./tsconfig.json (which sets
     // rootDir: "src") and deliberately sets no rootDir at all: this config
-    // type-checks @mcp-savings/core straight from its source (via "paths"
+    // type-checks @javilazaro/mcp-savings-core straight from its source (via "paths"
     // below), which lives outside opencode's own src/ tree — an explicit
     // rootDir would make tsc reject those files with TS6059 even under
     // --noEmit. Only used for the `typecheck` script; the `build` script
     // uses tsconfig.json unchanged.
     "noEmit": true,
     "types": ["node"],
-    // Type-check directly against @mcp-savings/core's source instead of its
+    // Type-check directly against @javilazaro/mcp-savings-core's source instead of its
     // built dist/*.d.ts, so `pnpm -r run typecheck` succeeds on a clean
     // checkout without requiring `pnpm -r run build` to have run first
     // (dist/ doesn't exist until core is built). This mapping only affects
     // this typecheck config — the real build (tsconfig.json) still
-    // resolves @mcp-savings/core the normal way, through the workspace
+    // resolves @javilazaro/mcp-savings-core the normal way, through the workspace
     // symlink to core's built dist/, via node's package resolution.
     "baseUrl": ".",
     "paths": {
-      "@mcp-savings/core": ["../core/src/index.ts"]
+      "@javilazaro/mcp-savings-core": ["../core/src/index.ts"]
     }
   },
   "include": ["src", "../core/src"]

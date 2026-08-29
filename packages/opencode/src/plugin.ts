@@ -11,13 +11,13 @@ import {
   type ServerWeight,
   type Snapshot,
   type TokenUsage,
-} from "@mcp-savings/core";
+} from "@javilazaro/mcp-savings-core";
 
 const HOST = "opencode";
 
 /**
  * Maps OpenCode's AssistantMessage/StepFinishPart `tokens` shape to the
- * host-agnostic TokenUsage shape used by @mcp-savings/core.
+ * host-agnostic TokenUsage shape used by @javilazaro/mcp-savings-core.
  *
  * HONESTY NOTE: every field here comes straight from the provider's own
  * usage accounting (OpenCode just forwards it) — these are real, measured

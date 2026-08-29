@@ -22,17 +22,17 @@ Measures the token cost/savings of MCP servers in AI coding agents.
 
 ## Structure
 
-- `packages/core` — `@mcp-savings/core`: pure domain logic (types, schema
-  weighing, server attribution, report formatting, session token
-  accounting, on-disk config/snapshot handoff, and the `mcp-savings` CLI).
-  Zero runtime dependencies — Node builtins only.
-- `packages/opencode` — `@mcp-savings/opencode`: the first host adapter, a
-  dual-export OpenCode plugin (a `event`-hook server plugin plus a `tui`
-  panel plugin) that measures a live OpenCode session.
+- `packages/core` — `@javilazaro/mcp-savings-core`: pure domain logic
+  (types, schema weighing, server attribution, report formatting, session
+  token accounting, on-disk config/snapshot handoff, and the `mcp-savings`
+  CLI). Zero runtime dependencies — Node builtins only.
+- `packages/opencode` — `@javilazaro/mcp-savings-opencode`: the first host
+  adapter, a dual-export OpenCode plugin (a `event`-hook server plugin plus
+  a `tui` panel plugin) that measures a live OpenCode session.
 
 Pi, OpenClaw, and Claude Code adapters are planned but not yet implemented
-— `@mcp-savings/core` was built host-agnostic specifically so those can
-reuse the same weighing/attribution/reporting logic later.
+— `@javilazaro/mcp-savings-core` was built host-agnostic specifically so
+those can reuse the same weighing/attribution/reporting logic later.
 
 ## Build
 
