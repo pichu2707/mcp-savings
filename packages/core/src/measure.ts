@@ -5,8 +5,17 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { countTokens } from "./tokenize.js";
 import { utf8Bytes } from "./weigh.js";
 
+/**
+ * How this client identifies itself in the MCP initialize handshake.
+ *
+ * CLIENT_VERSION must match the package version. It cannot be imported
+ * from package.json without dragging a JSON import through the build, so
+ * it is duplicated — and measure.test.mjs asserts the two agree, which
+ * turns a silent drift into a failing test on the release that forgets
+ * it. It had already drifted: 0.1.0 while the package shipped 0.2.0.
+ */
 const CLIENT_NAME = "mcp-savings";
-const CLIENT_VERSION = "0.1.0";
+const CLIENT_VERSION = "0.3.0";
 const DEFAULT_TIMEOUT_MS = 8000;
 const DEFAULT_CONCURRENCY = 3;
 

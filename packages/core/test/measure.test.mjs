@@ -32,7 +32,7 @@ import {
   readOpencodeMcpSpecs,
   utf8Bytes,
 } from "../dist/index.js";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -56,6 +56,26 @@ const broken = (name, enabled = true) => ({
   transport: "stdio",
   command: "mcp-savings-no-such-binary-xyz",
   enabled,
+});
+
+// ---------------------------------------------------------------------------
+// Client identity
+// ---------------------------------------------------------------------------
+
+test("CLIENT_VERSION matches the package version", () => {
+  // measure.ts hardcodes the version it announces in the MCP initialize
+  // handshake, because importing package.json would drag a JSON import
+  // through the build. Hardcoding guarantees drift — it had already reached
+  // 0.1.0 against a shipped 0.2.0 — so this reads both and makes the next
+  // release that forgets fail loudly instead of quietly misreporting itself
+  // to every MCP server it connects to.
+  const source = readFileSync(new URL("../src/measure.ts", import.meta.url), "utf8");
+  const declared = source.match(/CLIENT_VERSION = "([^"]+)"/)?.[1];
+  const { version } = JSON.parse(
+    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  );
+
+  assert.equal(declared, version, "bump CLIENT_VERSION in measure.ts to match package.json");
 });
 
 // ---------------------------------------------------------------------------
