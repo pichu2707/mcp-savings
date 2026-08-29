@@ -41,6 +41,8 @@ interface OpencodeMcpEntry {
   args?: string[];
   /** OpenCode's own name for the child process environment. */
   environment?: Record<string, string>;
+  /** McpRemoteConfig.headers — sent with every request to a remote server. */
+  headers?: Record<string, string>;
   /** Tolerated alias for `environment`, for hand-written configs. */
   env?: Record<string, string>;
 }
@@ -79,7 +81,11 @@ function toServerSpec(name: string, entry: OpencodeMcpEntry): ServerSpec | undef
   const enabled = entry.enabled !== false;
 
   if (typeof entry.url === "string" && entry.url.length > 0) {
-    return { name, transport: "http", url: entry.url, enabled };
+    // `headers` carries whatever the server needs to accept the request —
+    // usually an Authorization bearer token. Dropping it makes an
+    // authenticated server answer 401 and disappear from the report, the
+    // same invisible failure as dropping `environment` did for stdio.
+    return { name, transport: "http", url: entry.url, headers: entry.headers, enabled };
   }
 
   // An explicit `args` REPLACES whatever `command` carried, rather than

@@ -137,6 +137,35 @@ test("a `command` array uses its first element as the binary", () => {
   assert.deepEqual(spec.args, ["-y", "@scope/engram-server"]);
 });
 
+test("`headers` on a remote entry are carried into the spec", () => {
+  // McpRemoteConfig.headers, usually an Authorization bearer token. Dropping
+  // them makes an authenticated server answer 401, come back ok:false, and
+  // disappear from both PAY and SAVED — the HTTP counterpart of the
+  // `environment` bug above.
+  const [spec] = readConfig({
+    mcp: {
+      context7: {
+        type: "remote",
+        url: "https://mcp.example.test/mcp",
+        headers: { Authorization: "Bearer abc123" },
+      },
+    },
+  });
+
+  assert.equal(spec.transport, "http");
+  assert.deepEqual(spec.headers, { Authorization: "Bearer abc123" });
+});
+
+test("a remote entry with no headers gets undefined rather than an empty object", () => {
+  // Matches the `environment` treatment: nothing configured means nothing
+  // added, not an explicit empty set.
+  const [spec] = readConfig({
+    mcp: { context7: { type: "remote", url: "https://mcp.example.test/mcp" } },
+  });
+
+  assert.equal(spec.headers, undefined);
+});
+
 test("`url` wins when an entry carries both", () => {
   const [spec] = readConfig({
     mcp: { both: { url: "https://example.test/mcp", command: "should-be-ignored" } },

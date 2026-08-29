@@ -23,7 +23,21 @@ export type ServerSpec = {
   enabled: boolean;
 } & (
   | { transport: "stdio"; command: string; args?: string[]; env?: Record<string, string> }
-  | { transport: "http"; url: string }
+  | {
+      transport: "http";
+      url: string;
+      /**
+       * Extra HTTP headers to send with every request, e.g. an
+       * `Authorization` bearer token. Comes from OpenCode's
+       * `McpRemoteConfig.headers` (see opencodeConfig.ts).
+       *
+       * Without them an authenticated remote server answers 401, the
+       * measurement returns `ok: false`, and the server drops out of both
+       * the PAY and SAVED figures — indistinguishable from a server that
+       * was never configured.
+       */
+      headers?: Record<string, string>;
+    }
 );
 
 /** Per-tool schema weight, measured directly against the live MCP server. */
@@ -76,7 +90,14 @@ export interface ServerMeasurement {
 
 function createTransport(spec: ServerSpec): Transport {
   if (spec.transport === "http") {
-    return new StreamableHTTPClientTransport(new URL(spec.url));
+    // `requestInit` is how the SDK lets a caller customise the underlying
+    // fetch; headers set here go on every request the transport makes.
+    // OAuth (`authProvider`) is NOT wired up — a server behind an OAuth flow
+    // still cannot be measured.
+    return new StreamableHTTPClientTransport(
+      new URL(spec.url),
+      spec.headers ? { requestInit: { headers: spec.headers } } : undefined,
+    );
   }
   return new StdioClientTransport({
     command: spec.command,

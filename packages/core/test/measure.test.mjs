@@ -36,6 +36,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { startAuthenticatedMcpServer, REQUIRED_TOKEN } from "./fixtures/http-server.mjs";
+
 const FIXTURE = "test/fixtures/mcp-server.mjs";
 const ENV_FIXTURE = "test/fixtures/env-server.mjs";
 
@@ -255,6 +257,95 @@ test("a server configured with no environment simply gets none", async () => {
   const result = await measureEnvFixture({ command: ["node", ENV_FIXTURE] });
 
   assert.deepEqual(result.tools.map((tool) => tool.name), ["environment-was-not-passed"]);
+});
+
+// ---------------------------------------------------------------------------
+// Remote servers: configured headers must reach the request
+// ---------------------------------------------------------------------------
+//
+// The HTTP counterpart of the `environment` bug. OpenCode's McpRemoteConfig
+// carries `headers`, usually an Authorization bearer token. Dropping them
+// makes an authenticated server answer 401, the measurement return
+// ok:false, and the server disappear from both PAY and SAVED — the same
+// invisible failure, over a different transport.
+//
+// The fixture is a genuine MCP server behind a real 401 gate, so the passing
+// case is a full handshake and tools/list rather than an assertion that some
+// header object was constructed.
+
+test("headers from the spec reach an authenticated remote server", async () => {
+  const server = await startAuthenticatedMcpServer();
+  try {
+    const result = await measureServer(
+      {
+        name: "remote",
+        transport: "http",
+        url: server.url,
+        headers: { Authorization: REQUIRED_TOKEN },
+        enabled: true,
+      },
+      "gpt-4o",
+      5000,
+    );
+
+    assert.equal(result.ok, true, result.error);
+    assert.deepEqual(result.tools.map((tool) => tool.name), ["remote-search"]);
+    assert.ok(result.bytes > 0);
+    assert.ok(
+      server.seenHeaders.some((headers) => headers.authorization === REQUIRED_TOKEN),
+      "the server never saw the configured Authorization header",
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+test("REGRESSION: without headers the same server is unreachable", async () => {
+  // What every authenticated remote server did before headers were wired
+  // through: a 401, an ok:false, and silent removal from the report.
+  const server = await startAuthenticatedMcpServer();
+  try {
+    const result = await measureServer(
+      { name: "remote", transport: "http", url: server.url, enabled: true },
+      "gpt-4o",
+      5000,
+    );
+
+    assert.equal(result.ok, false);
+    assert.match(result.error, /unauthorized/);
+    assert.equal(result.tokens, null, "and it must not be reported as costing nothing");
+  } finally {
+    await server.close();
+  }
+});
+
+test("an OpenCode remote entry carries its headers all the way to the request", async () => {
+  // End to end from a config on disk, the way a user actually configures an
+  // authenticated remote MCP server.
+  const server = await startAuthenticatedMcpServer();
+  try {
+    const path = join(envConfigDir, `remote-${Math.random().toString(36).slice(2)}.json`);
+    writeFileSync(
+      path,
+      JSON.stringify({
+        mcp: {
+          remote: {
+            type: "remote",
+            url: server.url,
+            headers: { Authorization: REQUIRED_TOKEN },
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    const [result] = await measureServers(readOpencodeMcpSpecs(path), "gpt-4o");
+
+    assert.equal(result.ok, true, result.error);
+    assert.deepEqual(result.tools.map((tool) => tool.name), ["remote-search"]);
+  } finally {
+    await server.close();
+  }
 });
 
 // ---------------------------------------------------------------------------
