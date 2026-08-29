@@ -133,7 +133,14 @@ export function formatMeasurementTable(
     // `true` — see ServerMeasurement.enabled's doc in measure.ts.
     const enabledLabel = result.enabled !== false ? "yes" : "no";
     if (!result.ok) {
-      return [result.server, enabledLabel, "-", result.error ?? "unknown error", "-", "error"];
+      // The message goes BELOW the table, not into the SCHEMA BYTES column.
+      // Column widths are derived from content, so a failure like
+      // "Streamable HTTP error: ... No authorization provided" — a real one,
+      // from an OAuth-protected server — dragged every row out to 129
+      // characters. The table stayed aligned and stopped being readable.
+      // Truncating instead would keep the width but hide the cause, which is
+      // the one thing a failed row exists to tell you.
+      return [result.server, enabledLabel, "-", "-", "-", "error"];
     }
     return [
       result.server,
@@ -163,6 +170,18 @@ export function formatMeasurementTable(
   lines.push(separator);
   for (const row of rows) lines.push(renderRow(row));
   lines.push(separator);
+
+  // Failures in full, where their length costs nothing. A server that could
+  // not be measured contributes to neither PAY nor SAVED, so without this it
+  // would vanish from the report with only an "error" cell to show for it.
+  const failed = results.filter((result) => !result.ok);
+  if (failed.length > 0) {
+    lines.push("");
+    lines.push(failed.length === 1 ? "Could not be measured:" : `Could not be measured (${failed.length}):`);
+    for (const result of failed) {
+      lines.push(`  ${result.server}: ${result.error ?? "unknown error"}`);
+    }
+  }
 
   return lines.join("\n");
 }

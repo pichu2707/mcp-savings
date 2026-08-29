@@ -210,8 +210,8 @@ test("a failed server is marked error and keeps its message", () => {
     "gpt-4o",
   );
 
-  assert.match(rendered, /spawn ENOENT/);
-  assert.match(rendered, /\| +error \|/);
+  assert.match(rendered, /\| +error \|/, "the row is marked");
+  assert.match(rendered, /Could not be measured:\n {2}broken: spawn ENOENT/, "and explained below");
 });
 
 test("a failed server with no message still says something", () => {
@@ -220,22 +220,70 @@ test("a failed server with no message still says something", () => {
   assert.match(rendered, /unknown error/);
 });
 
-test("CHARACTERISATION: an error message is rendered in the SCHEMA BYTES column", () => {
-  // It reuses that column rather than adding one, so a verbose error widens
-  // the whole table — the rows stay aligned, but a long enough message
-  // pushes the report past a normal terminal. Pinned, not endorsed.
-  const long = "spawn ENOENT: no such file or directory in PATH";
-  const rendered = formatMeasurementTable(
-    [measurement("ok-one"), measurement("broken", { ok: false, error: long })],
+test("the table's width does not depend on how long an error message is", () => {
+  // REGRESSION. The message used to be rendered inside the SCHEMA BYTES
+  // column, and since column widths are derived from content, one verbose
+  // failure dragged every row out with it. A real one — an OAuth-protected
+  // server answering "No authorization provided" — pushed this table to 129
+  // characters and made the servers that DID measure unreadable.
+  //
+  // Rendering the same fleet twice, with a short error and a very long one,
+  // and requiring the table portion to be byte-identical is what makes this
+  // fail under the old behaviour rather than merely happening to pass.
+  const short = formatMeasurementTable(
+    [measurement("ok-one"), measurement("broken", { ok: false, error: "nope" })],
     "gpt-4o",
   );
-  const lines = tableLines(rendered);
+  const long = formatMeasurementTable(
+    [
+      measurement("ok-one"),
+      measurement("broken", {
+        ok: false,
+        error: "Streamable HTTP error: Error POSTing to endpoint: " + "x".repeat(200),
+      }),
+    ],
+    "gpt-4o",
+  );
 
-  assert.equal(new Set(lines.map((l) => l.length)).size, 1, "rows must still align");
-  assert.ok(lines[0].length > long.length, "the table widened to fit the message");
+  assert.deepEqual(tableLines(long), tableLines(short), "the error text leaked into the table");
+  assert.ok(tableLines(long)[0].length < 70, "and the table stays terminal-sized");
+});
 
-  // The measured server's byte value now sits in that same widened column.
-  assert.match(rendered, /\| +3\.0 KB \| +750 \| +ok \|/);
+test("a failed server's message is reported in full below the table", () => {
+  // Truncating to protect the width would keep the table readable and hide
+  // the cause, which is the one thing a failed row exists to tell you. Below
+  // the table its length costs nothing.
+  const error = "Streamable HTTP error: " + "detail ".repeat(30);
+  const rendered = formatMeasurementTable(
+    [measurement("broken", { ok: false, error })],
+    "gpt-4o",
+  );
+
+  assert.match(rendered, /\nCould not be measured:\n {2}broken: /);
+  assert.ok(rendered.includes(error), "the message must not be truncated");
+});
+
+test("several failures are listed together, with a count", () => {
+  const rendered = formatMeasurementTable(
+    [
+      measurement("ok-one"),
+      measurement("a", { ok: false, error: "first" }),
+      measurement("b", { ok: false, error: "second" }),
+    ],
+    "gpt-4o",
+  );
+
+  assert.match(rendered, /Could not be measured \(2\):/);
+  assert.match(rendered, / {2}a: first/);
+  assert.match(rendered, / {2}b: second/);
+});
+
+test("no failure block appears when everything measured", () => {
+  // A heading with nothing under it reads as a problem the reader then has
+  // to go looking for.
+  const rendered = formatMeasurementTable([measurement("engram")], "gpt-4o");
+
+  assert.doesNotMatch(rendered, /Could not be measured/);
 });
 
 test("the model used for tokenization is named in the heading", () => {
