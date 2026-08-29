@@ -18,7 +18,7 @@ import { utf8Bytes } from "./weigh.js";
  * a second copy that would need its own guard.
  */
 const CLIENT_NAME = "mcp-savings";
-export const CLIENT_VERSION = "0.7.1";
+export const CLIENT_VERSION = "0.7.2";
 const DEFAULT_TIMEOUT_MS = 8000;
 const DEFAULT_CONCURRENCY = 3;
 

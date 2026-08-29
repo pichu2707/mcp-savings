@@ -6,6 +6,8 @@ OpenCode session.
 
 Dual export: an `event`-hook server plugin plus a `tui` panel plugin.
 
+by [Javi Lázaro](https://github.com/pichu2707) · MIT
+
 ## Install
 
 ```sh
@@ -31,6 +33,13 @@ Session: 13.9K in · 9 out
 - **ON/OFF** comes from OpenCode's live MCP status, not just static config.
 - **Session** is provider-reported conversation usage — a different metric from
   per-request MCP schema cost.
+
+Only OpenCode's own `mcp.<name>.enabled` moves a server between Active and
+Saved, because only that actually stops its schema being sent. Flipping
+mcp-savings' own `disabledByDefault` does not change the Saved figure.
+
+"Per request" sizes the context window a schema occupies, not money billed:
+with prompt caching it is usually written once and read back cheaply after.
 
 ## Caveat
 
