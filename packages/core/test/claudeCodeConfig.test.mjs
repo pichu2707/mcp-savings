@@ -33,7 +33,7 @@ after(() => rmSync(root, { recursive: true, force: true }));
 
 let counter = 0;
 /** Builds a throwaway ~/.claude tree and reads it. */
-function readClaudeDir({ userServers = {}, plugins = [], enabledPlugins, settings } = {}) {
+function readClaudeDir({ userServers = {}, plugins = [], enabledPlugins, settings, credentials } = {}) {
   const dir = join(root, `home-${counter++}`);
   mkdirSync(dir, { recursive: true });
 
@@ -68,8 +68,35 @@ function readClaudeDir({ userServers = {}, plugins = [], enabledPlugins, setting
     );
   }
 
+  if (credentials !== undefined) {
+    writeFileSync(
+      join(dir, ".credentials.json"),
+      typeof credentials === "string" ? credentials : JSON.stringify(credentials),
+      "utf8",
+    );
+  }
+
   return readClaudeCodeMcpSpecs(dir);
 }
+
+/** A stored mcpOAuth record, shaped like Claude Code writes it. */
+const oauth = (serverUrl, accessToken, key = "plugin:x:y|abc123") => ({
+  mcpOAuth: {
+    [key]: { serverName: "plugin:x:y", serverUrl, accessToken, clientId: "cl_x" },
+  },
+});
+
+/** One remote server at `url`, provided by an enabled plugin. */
+const remoteAt = (url) => ({
+  plugins: [
+    {
+      marketplace: "official",
+      plugin: "remote",
+      manifest: { mcpServers: { remote: { type: "http", url } } },
+    },
+  ],
+  enabledPlugins: { "remote@official": true },
+});
 
 const byName = (specs) => Object.fromEntries(specs.map((spec) => [spec.name, spec]));
 
@@ -259,6 +286,115 @@ test("a user-added server wins over a plugin's server of the same name", () => {
 
   assert.equal(specs.length, 1, "it must not be counted twice");
   assert.equal(specs[0].command, "user-engram");
+});
+
+// ---------------------------------------------------------------------------
+// Stored OAuth tokens
+// ---------------------------------------------------------------------------
+//
+// Claude Code completes the OAuth flow itself and stores the result in
+// ~/.claude/.credentials.json. Reusing it is what lets a server behind OAuth
+// be MEASURED instead of reported as an error — and an unmeasurable server
+// counts toward neither PAY nor SAVED, so its cost silently leaves the
+// report entirely. On a real fleet that hid 51.6 KB of the 73.7 KB actually
+// being sent every request: more than two thirds of the true figure.
+
+test("a stored token is attached as an Authorization bearer header", () => {
+  const [spec] = readClaudeDir({
+    ...remoteAt("https://mcp.example.test"),
+    credentials: oauth("https://mcp.example.test", "tok-123"),
+  });
+
+  assert.deepEqual(spec.headers, { Authorization: "Bearer tok-123" });
+});
+
+test("tokens are matched by server url, not by the record's key", () => {
+  // The key looks like `plugin:vercel:vercel|511b08192b045b3d` — a naming
+  // scheme joined to an opaque hash. Parsing it would couple this reader to
+  // an internal format; the url is already in hand and is the real identity.
+  const [spec] = readClaudeDir({
+    ...remoteAt("https://mcp.example.test"),
+    credentials: oauth("https://mcp.example.test", "tok-123", "totally:unrelated|deadbeef"),
+  });
+
+  assert.deepEqual(spec.headers, { Authorization: "Bearer tok-123" });
+});
+
+test("a trailing slash does not stop a token matching its server", () => {
+  const [spec] = readClaudeDir({
+    ...remoteAt("https://mcp.example.test"),
+    credentials: oauth("https://mcp.example.test/", "tok-123"),
+  });
+
+  assert.deepEqual(spec.headers, { Authorization: "Bearer tok-123" });
+});
+
+test("an EMPTY stored token adds no header at all", () => {
+  // The real shape of a flow that was started and never finished — the
+  // record exists with clientId and redirectUri but no token. Sending
+  // "Bearer " with nothing after it turns "not authorised" into a malformed
+  // request, and a worse error message.
+  const [spec] = readClaudeDir({
+    ...remoteAt("https://mcp.example.test"),
+    credentials: oauth("https://mcp.example.test", ""),
+  });
+
+  assert.equal(spec.headers, undefined);
+});
+
+test("an explicitly configured Authorization header wins over a stored token", () => {
+  // The user wrote that header down on purpose. Any casing counts — HTTP
+  // header names are case-insensitive and a manifest may use any of them.
+  const [spec] = readClaudeDir({
+    plugins: [
+      {
+        marketplace: "official",
+        plugin: "remote",
+        manifest: {
+          mcpServers: {
+            remote: {
+              type: "http",
+              url: "https://mcp.example.test",
+              headers: { authorization: "Bearer configured" },
+            },
+          },
+        },
+      },
+    ],
+    enabledPlugins: { "remote@official": true },
+    credentials: oauth("https://mcp.example.test", "stored"),
+  });
+
+  assert.deepEqual(spec.headers, { authorization: "Bearer configured" });
+});
+
+test("a token for a url nothing uses is simply ignored", () => {
+  const [spec] = readClaudeDir({
+    ...remoteAt("https://mcp.example.test"),
+    credentials: oauth("https://somewhere.else.test", "tok-123"),
+  });
+
+  assert.equal(spec.headers, undefined);
+});
+
+test("stdio servers are untouched by the token store", () => {
+  const [spec] = readClaudeDir({
+    userServers: { "engram.json": { command: "engram" } },
+    credentials: oauth("https://mcp.example.test", "tok-123"),
+  });
+
+  assert.equal(spec.transport, "stdio");
+  assert.equal(spec.headers, undefined);
+});
+
+test("a missing or corrupt credentials file costs nothing but the tokens", () => {
+  // Measuring must still work for every server that needs no auth.
+  for (const credentials of [undefined, "{ not json", { somethingElse: true }, { mcpOAuth: 42 }]) {
+    const [spec] = readClaudeDir({ ...remoteAt("https://mcp.example.test"), credentials });
+
+    assert.equal(spec.name, "remote", `still discovered with credentials=${JSON.stringify(credentials)}`);
+    assert.equal(spec.headers, undefined);
+  }
 });
 
 // ---------------------------------------------------------------------------

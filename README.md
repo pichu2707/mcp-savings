@@ -45,10 +45,12 @@ npx @javilazaro/mcp-savings-core --help
   id against `mcp__<server>__<tool>` or `mcp_<server>_<tool>` (see
   `packages/core/src/attribute.ts`). Looser forms like a bare
   `<server>_<tool>` are deliberately NOT matched — see below.
-- **A server behind OAuth cannot be measured.** Remote servers accept
-  configured `headers` (e.g. a bearer token), but an OAuth authorization flow
-  is not implemented — such a server reports as an error rather than being
-  silently counted as free.
+- **OAuth servers are measured by reusing the host's own token.** For
+  `--host claude-code`, a server the user has already authorised is read from
+  `~/.claude/.credentials.json` and its bearer token is sent with the
+  request. mcp-savings never runs an authorization flow, never refreshes, and
+  never writes to that file. A server that has NOT been authorised reports as
+  an error rather than being silently counted as free.
 - **OpenCode's `/experimental/tool` endpoint is unstable** and may change or
   disappear in future OpenCode releases without notice.
 
@@ -94,6 +96,12 @@ from two places, and both are honoured —
   installed plugins. A plugin's server counts as enabled only while the
   plugin itself is enabled in `~/.claude/settings.json`, which is what makes
   a switched-off plugin show up as a realized saving rather than disappear.
+
+Remote servers already authorised through Claude Code are measured using the
+token it stored, so a server behind OAuth contributes its real cost instead
+of an error. That matters more than it sounds: an unmeasurable server counts
+toward neither PAY nor SAVED, so its schema silently leaves the report. On
+one real fleet that hid 51.6 KB of the 73.7 KB actually being sent.
 
 A full Claude Code adapter — reporting live session tokens the way the
 OpenCode plugin does — is not implemented yet. Pi and OpenClaw adapters are

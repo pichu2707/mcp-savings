@@ -137,12 +137,86 @@ function readPluginServers(claudeDir: string): ServerSpec[] {
 }
 
 /**
+ * Stored OAuth access tokens, keyed by the server url they belong to.
+ *
+ * Claude Code completes the OAuth flow itself and writes the result to
+ * ~/.claude/.credentials.json under `mcpOAuth`. Reading it means mcp-savings
+ * never has to run an authorization flow of its own — no browser, no local
+ * callback server — to measure a server the user has already authorised.
+ *
+ * Entries are matched by `serverUrl`, NOT by the record's key. That key looks
+ * like `plugin:vercel:vercel|511b08192b045b3d`: a composite of naming scheme
+ * and an opaque hash, neither of which this package should be parsing. The
+ * url is the same value the spec already carries.
+ *
+ * LIMITATIONS, both deliberate:
+ *  - The token is used exactly as stored and is never logged, cached or
+ *    written anywhere by this package.
+ *  - No refresh is attempted, even though a `refreshToken` sits right there.
+ *    These tokens are short-lived — an hour in practice — so an expired one
+ *    produces the server's own "token expired" response, which says more
+ *    than any guess this package could make. Refreshing would mean writing
+ *    back into someone else's credential store, which a measurement tool has
+ *    no business doing.
+ */
+function readOAuthTokensByUrl(claudeDir: string): Map<string, string> {
+  const tokens = new Map<string, string>();
+  const credentials = readJson(join(claudeDir, ".credentials.json"));
+  if (!isEntry(credentials)) return tokens;
+
+  const stored = (credentials as { mcpOAuth?: unknown }).mcpOAuth;
+  if (!isEntry(stored)) return tokens;
+
+  for (const record of Object.values(stored as Record<string, unknown>)) {
+    if (!isEntry(record)) continue;
+    const { serverUrl, accessToken } = record as { serverUrl?: unknown; accessToken?: unknown };
+    // An empty accessToken means the flow was started but never finished —
+    // sending `Bearer ` with nothing after it is worse than sending nothing,
+    // because it turns "not authorised" into a malformed request.
+    if (typeof serverUrl !== "string" || typeof accessToken !== "string" || !accessToken) continue;
+    tokens.set(normalizeUrl(serverUrl), accessToken);
+  }
+  return tokens;
+}
+
+/** Trailing slashes are not meaningful when matching a server's base url. */
+function normalizeUrl(url: string): string {
+  return url.replace(/\/+$/, "");
+}
+
+/**
+ * Attaches a stored bearer token to any remote server that has one and does
+ * not already carry an Authorization header of its own — an explicitly
+ * configured header is the user's decision and wins.
+ */
+function withStoredTokens(specs: ServerSpec[], tokens: Map<string, string>): ServerSpec[] {
+  if (tokens.size === 0) return specs;
+
+  return specs.map((spec) => {
+    if (spec.transport !== "http") return spec;
+    const alreadySet = Object.keys(spec.headers ?? {}).some(
+      (name) => name.toLowerCase() === "authorization",
+    );
+    if (alreadySet) return spec;
+
+    const token = tokens.get(normalizeUrl(spec.url));
+    if (!token) return spec;
+
+    return { ...spec, headers: { ...spec.headers, Authorization: `Bearer ${token}` } };
+  });
+}
+
+/**
  * Every MCP server Claude Code knows about, from both sources, ready for
  * `measureServers`.
  *
  * Like the OpenCode reader, disabled servers are INCLUDED rather than
  * dropped: measuring one is the only way to know what having it off
  * actually saves.
+ *
+ * Remote servers the user has already authorised through Claude Code get
+ * their stored bearer token attached, so a server behind OAuth is measured
+ * rather than reported as an error — see readOAuthTokensByUrl.
  *
  * A user-added server wins over a plugin-provided one of the same name —
  * the user configured it explicitly, and Claude Code has no way to express
@@ -154,6 +228,7 @@ export function readClaudeCodeMcpSpecs(claudeDir: string = DEFAULT_CLAUDE_DIR): 
 
   const user = readUserServers(dir);
   const taken = new Set(user.map((spec) => spec.name));
+  const specs = [...user, ...readPluginServers(dir).filter((spec) => !taken.has(spec.name))];
 
-  return [...user, ...readPluginServers(dir).filter((spec) => !taken.has(spec.name))];
+  return withStoredTokens(specs, readOAuthTokensByUrl(dir));
 }
