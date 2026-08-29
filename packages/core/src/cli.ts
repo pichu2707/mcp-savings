@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { EMPTY_TOKEN_USAGE } from "./types.js";
 import { formatWeightTable, formatMeasurementTable, humanizeBytes, humanizeTokens } from "./report.js";
-import { loadConfig, loadSnapshot, setServerDisabledByDefault } from "./config.js";
+import { isMeasurementFresh, loadConfig, loadSnapshot, setServerDisabledByDefault } from "./config.js";
+import { splitPayAndSaved } from "./savings.js";
 import { measureServers, type ServerMeasurement } from "./measure.js";
 import { readOpencodeMcpSpecs } from "./opencodeConfig.js";
 import { DEFAULT_MODEL } from "./tokenize.js";
@@ -33,24 +34,6 @@ server reports over \`tools/list\`. This is an estimate of what a host would
 send a model — see the honesty notes in measure.ts/report.ts for caveats.
 `;
 
-/**
- * How long a persisted `snapshot.mcpMeasurement` is trusted before `report`
- * re-measures live instead of showing a stale one.
- *
- * DECISION: the plugin refreshes `mcpMeasurement` at the same points it
- * refreshes the rest of the snapshot (session start + `session.idle`, see
- * plugin.ts's `persist()`), so `snapshot.timestamp` doubles as "when this
- * measurement was taken" — there's no separate `mcpMeasurement`-specific
- * timestamp to track. MCP server tool schemas change rarely in practice
- * (host restart, config edit, or server upgrade), but an OpenCode session
- * can sit open and idle for a long time, so we don't want to trust a
- * measurement from days ago. 1 hour is a middle ground: long enough that
- * repeated `report` calls during one work session don't re-spawn MCP server
- * processes on every invocation, short enough that the numbers don't go
- * silently stale across days. Matches the epoch-ms `Date.now()` convention
- * `snapshot.timestamp` already uses.
- */
-const MCP_MEASUREMENT_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 interface ResolvedMcpMeasurement {
   results: ServerMeasurement[];
@@ -60,7 +43,7 @@ interface ResolvedMcpMeasurement {
 
 /**
  * Resolves the MCP measurement to show in `report`: reuse the snapshot's
- * `mcpMeasurement` if present and fresh (see MCP_MEASUREMENT_TTL_MS above),
+ * `mcpMeasurement` if present and fresh (see isMeasurementFresh in config.ts),
  * otherwise measure directly against each configured MCP server — the same
  * codepath `mcp-savings measure` uses — so `report` always has something to
  * show even with no snapshot at all (e.g. no host has run yet).
@@ -69,10 +52,8 @@ async function resolveMcpMeasurement(
   snapshot: ReturnType<typeof loadSnapshot>,
   model: string,
 ): Promise<ResolvedMcpMeasurement> {
-  const isFresh =
-    snapshot?.mcpMeasurement !== undefined && Date.now() - snapshot.timestamp < MCP_MEASUREMENT_TTL_MS;
-  if (isFresh) {
-    return { results: snapshot.mcpMeasurement!, live: false };
+  if (isMeasurementFresh(snapshot)) {
+    return { results: snapshot.mcpMeasurement, live: false };
   }
 
   // `specs` includes `enabled: false` servers on purpose — measuring one
@@ -82,40 +63,6 @@ async function resolveMcpMeasurement(
   if (specs.length === 0) return { results: [], live: true };
   const results = await measureServers(specs, model);
   return { results, live: true };
-}
-
-/**
- * Splits a resolved measurement into PAY (enabled servers — what's currently
- * costing every request) and SAVED (disabled servers — what's already been
- * cut). Shared by `printReport` and `printMeasure` so the two commands never
- * disagree about which servers count toward which number.
- *
- * `enabled` missing (older snapshot data) is treated as `true` — see
- * ServerMeasurement.enabled's doc in measure.ts.
- */
-function splitPayAndSaved(results: readonly ServerMeasurement[]): {
-  payBytes: number;
-  payTokens: number | null;
-  payCount: number;
-  savedBytes: number;
-  savedTokens: number | null;
-  savedCount: number;
-} {
-  const enabledOk = results.filter((result) => result.enabled !== false && result.ok);
-  const disabledOk = results.filter((result) => result.enabled === false && result.ok);
-
-  return {
-    payBytes: enabledOk.reduce((sum, result) => sum + result.bytes, 0),
-    payTokens: enabledOk.some((result) => result.tokens === null)
-      ? null
-      : enabledOk.reduce((sum, result) => sum + (result.tokens ?? 0), 0),
-    payCount: enabledOk.length,
-    savedBytes: disabledOk.reduce((sum, result) => sum + result.bytes, 0),
-    savedTokens: disabledOk.some((result) => result.tokens === null)
-      ? null
-      : disabledOk.reduce((sum, result) => sum + (result.tokens ?? 0), 0),
-    savedCount: disabledOk.length,
-  };
 }
 
 /** Prints the PAY line, and the SAVED line only when there's a realized saving to show. */

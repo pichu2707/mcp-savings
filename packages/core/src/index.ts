@@ -20,7 +20,10 @@ export {
   setServerDisabledByDefault,
   loadSnapshot,
   saveSnapshot,
+  isMeasurementFresh,
+  MCP_MEASUREMENT_TTL_MS,
 } from "./config.js";
+export { splitPayAndSaved, type PayAndSaved } from "./savings.js";
 export { encodingForModel, countTokens, DEFAULT_MODEL } from "./tokenize.js";
 export {
   type ServerSpec,
