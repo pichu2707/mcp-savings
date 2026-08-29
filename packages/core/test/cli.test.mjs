@@ -159,10 +159,12 @@ test("list emits one tab-separated line per server", async () => {
 // ---------------------------------------------------------------------------
 
 test("measure reports nothing to measure when the config has no servers", async () => {
+  // The message names the host, so a user who passed --host can see which
+  // config was actually consulted rather than guessing.
   const { stdout, code } = await run("measure", "--config", opencodeConfig({}));
 
   assert.equal(code, 0, "an empty config is not an error");
-  assert.match(stdout, /No MCP servers found in the OpenCode config/);
+  assert.match(stdout, /No MCP servers found for host "opencode"/);
 });
 
 test("measure connects to a real server and prints its schema weight", async () => {
@@ -216,6 +218,66 @@ test("a flag with no value is ignored rather than crashing", async () => {
 
   assert.equal(code, 0);
   assert.match(stdout, /model: gpt-5\.4/, "it fell back to DEFAULT_MODEL");
+});
+
+// ---------------------------------------------------------------------------
+// --host: which host's config to discover servers from
+// ---------------------------------------------------------------------------
+
+/** Builds a throwaway ~/.claude tree with one user-added MCP server. */
+function claudeHome(entry) {
+  const dir = join(home, `claude-${Math.random().toString(36).slice(2)}`);
+  mkdirSync(join(dir, "mcp"), { recursive: true });
+  writeFileSync(join(dir, "mcp", "fixture.json"), JSON.stringify(entry), "utf8");
+  return dir;
+}
+
+test("measure discovers servers from a Claude Code install", async () => {
+  // Claude Code keeps one file per server under ~/.claude/mcp, named after
+  // the server — a different layout from OpenCode's single config file.
+  const dir = claudeHome({ command: process.execPath, args: [MCP_FIXTURE, "--tools", "2"] });
+
+  const { stdout, code } = await run("measure", "--host", "claude-code", "--config", dir);
+
+  assert.equal(code, 0);
+  assert.match(stdout, /\| fixture +\| +yes \|/, "the filename became the server name");
+  assert.match(stdout, /\| +2 \|/, "and it was really measured");
+  assert.match(stdout, /PAY {3}~/);
+});
+
+test("the default host is still opencode", async () => {
+  // Adding --host must not change what an existing invocation does.
+  const config = opencodeConfig({
+    fixture: { command: `${process.execPath} ${MCP_FIXTURE} --tools 1` },
+  });
+
+  const [withFlag, without] = await Promise.all([
+    run("measure", "--config", config, "--host", "opencode"),
+    run("measure", "--config", config),
+  ]);
+
+  assert.equal(without.code, 0);
+  assert.equal(without.stdout, withFlag.stdout);
+});
+
+test("an unknown host fails loudly instead of measuring the wrong one", async () => {
+  // Falling back to the default here would report numbers for servers the
+  // user never asked about, under a heading naming the host they did.
+  const { stderr, code } = await run("measure", "--host", "emacs");
+
+  assert.equal(code, 1);
+  assert.match(stderr, /Unknown host: emacs/);
+  assert.match(stderr, /opencode, claude-code/);
+});
+
+test("an empty Claude Code install says which host it looked at", async () => {
+  const dir = join(home, "empty-claude");
+  mkdirSync(dir, { recursive: true });
+
+  const { stdout, code } = await run("measure", "--host", "claude-code", "--config", dir);
+
+  assert.equal(code, 0);
+  assert.match(stdout, /No MCP servers found for host "claude-code"/);
 });
 
 // ---------------------------------------------------------------------------

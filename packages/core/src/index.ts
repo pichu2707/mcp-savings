@@ -33,3 +33,5 @@ export {
   measureServers,
 } from "./measure.js";
 export { readOpencodeMcpSpecs } from "./opencodeConfig.js";
+export { readClaudeCodeMcpSpecs } from "./claudeCodeConfig.js";
+export { toServerSpec, expandHome, type McpEntry } from "./hostConfig.js";

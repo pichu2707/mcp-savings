@@ -43,6 +43,10 @@ npx @javilazaro/mcp-savings-core --help
   id against `mcp__<server>__<tool>` or `mcp_<server>_<tool>` (see
   `packages/core/src/attribute.ts`). Looser forms like a bare
   `<server>_<tool>` are deliberately NOT matched — see below.
+- **A server behind OAuth cannot be measured.** Remote servers accept
+  configured `headers` (e.g. a bearer token), but an OAuth authorization flow
+  is not implemented — such a server reports as an error rather than being
+  silently counted as free.
 - **OpenCode's `/experimental/tool` endpoint is unstable** and may change or
   disappear in future OpenCode releases without notice.
 
@@ -78,9 +82,21 @@ where they helped and one measured case where they hurt.
   adapter, a dual-export OpenCode plugin (an `event`-hook server plugin plus
   a `tui` panel plugin) that measures a live OpenCode session.
 
-Pi, OpenClaw, and Claude Code adapters are planned but not yet implemented
-— `@javilazaro/mcp-savings-core` was built host-agnostic specifically so
-those can reuse the same weighing/attribution/reporting logic later.
+`measure --host claude-code` works today with no plugin installed: Claude
+Code keeps its MCP servers on disk, so they can simply be read. Servers come
+from two places, and both are honoured —
+
+- `~/.claude/mcp/<server>.json`, one file per user-added server, where the
+  filename is the server name.
+- `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/.mcp.json`, from
+  installed plugins. A plugin's server counts as enabled only while the
+  plugin itself is enabled in `~/.claude/settings.json`, which is what makes
+  a switched-off plugin show up as a realized saving rather than disappear.
+
+A full Claude Code adapter — reporting live session tokens the way the
+OpenCode plugin does — is not implemented yet. Pi and OpenClaw adapters are
+planned. `@javilazaro/mcp-savings-core` was built host-agnostic specifically
+so those can reuse the same weighing, attribution and reporting logic.
 
 ## OpenCode sidebar
 
@@ -112,8 +128,9 @@ mcp-savings' own `disabledByDefault` does not change the SAVED figure.
 ```
 mcp-savings report              Session tokens, MCP servers, and host built-ins
 mcp-savings measure             Connect to each configured MCP server and weigh it
+  --host <host>                 opencode (default) or claude-code
   --model <model>               Model to tokenize against
-  --config <path>               An OpenCode config file
+  --config <path>               The host's config path
 mcp-savings list                List configured servers and their flags
 mcp-savings disable <server>    Mark a server as disabled-by-default
 mcp-savings enable <server>     Clear that flag

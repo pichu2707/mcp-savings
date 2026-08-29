@@ -5,6 +5,7 @@ import { isMeasurementFresh, loadConfig, loadSnapshot, setServerDisabledByDefaul
 import { splitPayAndSaved } from "./savings.js";
 import { measureServers, type ServerMeasurement } from "./measure.js";
 import { readOpencodeMcpSpecs } from "./opencodeConfig.js";
+import { readClaudeCodeMcpSpecs } from "./claudeCodeConfig.js";
 import { DEFAULT_MODEL } from "./tokenize.js";
 
 const HELP = `mcp-savings — measure MCP server token/schema cost in AI coding agents
@@ -19,9 +20,12 @@ Usage:
   mcp-savings enable <server>    Clear a server's disabled-by-default flag
   mcp-savings measure            Connect directly to each configured MCP server and
                                   weigh its tool schemas (bytes + tokens)
+    --host <host>                Where to discover servers: opencode (default)
+                                  or claude-code
     --model <model>              Model to tokenize against (default: ${DEFAULT_MODEL})
-    --config <path>              Path to an OpenCode config file
-                                  (default: ~/.config/opencode/opencode.json)
+    --config <path>              Path to the host's config
+                                  (opencode: ~/.config/opencode/opencode.json,
+                                   claude-code: ~/.claude)
   mcp-savings --help             Show this help
 
 Snapshots are written by a running host adapter (e.g. @javilazaro/mcp-savings-opencode)
@@ -170,12 +174,31 @@ function parseFlags(args: readonly string[], flagNames: readonly string[]): Reco
   return flags;
 }
 
-async function printMeasure(model: string, configPath: string | undefined): Promise<void> {
-  // Includes `enabled: false` servers on purpose — see measure.ts's
-  // `measureServers` doc for the spawn-side-effect tradeoff this implies.
-  const specs = configPath === undefined ? readOpencodeMcpSpecs() : readOpencodeMcpSpecs(configPath);
+const HOSTS = ["opencode", "claude-code"] as const;
+type Host = (typeof HOSTS)[number];
+
+/**
+ * Discovers a host's configured MCP servers. Each reader has its own default
+ * path, so `configPath` is only passed through when the user supplied one —
+ * calling with `undefined` would override the default with nothing.
+ */
+function readSpecsFor(host: Host, configPath: string | undefined) {
+  if (host === "claude-code") {
+    return configPath === undefined ? readClaudeCodeMcpSpecs() : readClaudeCodeMcpSpecs(configPath);
+  }
+  return configPath === undefined ? readOpencodeMcpSpecs() : readOpencodeMcpSpecs(configPath);
+}
+
+async function printMeasure(
+  model: string,
+  configPath: string | undefined,
+  host: Host,
+): Promise<void> {
+  // Includes disabled servers on purpose — see measure.ts's `measureServers`
+  // doc for the spawn-side-effect tradeoff this implies.
+  const specs = readSpecsFor(host, configPath);
   if (specs.length === 0) {
-    console.log("No MCP servers found in the OpenCode config (or the config file doesn't exist).");
+    console.log(`No MCP servers found for host "${host}" (or its config doesn't exist).`);
     return;
   }
 
@@ -219,8 +242,16 @@ async function main(argv: string[]): Promise<void> {
       return;
     }
     case "measure": {
-      const flags = parseFlags(rest, ["model", "config"]);
-      await printMeasure(flags.model ?? DEFAULT_MODEL, flags.config);
+      const flags = parseFlags(rest, ["model", "config", "host"]);
+      const host = flags.host ?? "opencode";
+      if (!HOSTS.includes(host as Host)) {
+        // Falling back to the default here would silently measure the wrong
+        // host and report numbers for servers the user never asked about.
+        console.error(`Unknown host: ${host}. Expected one of: ${HOSTS.join(", ")}`);
+        process.exitCode = 1;
+        return;
+      }
+      await printMeasure(flags.model ?? DEFAULT_MODEL, flags.config, host as Host);
       return;
     }
     case "--help":
