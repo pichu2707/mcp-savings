@@ -15,7 +15,7 @@ import { utf8Bytes } from "./weigh.js";
  * it. It had already drifted: 0.1.0 while the package shipped 0.2.0.
  */
 const CLIENT_NAME = "mcp-savings";
-const CLIENT_VERSION = "0.6.0";
+const CLIENT_VERSION = "0.7.0";
 const DEFAULT_TIMEOUT_MS = 8000;
 const DEFAULT_CONCURRENCY = 3;
 
