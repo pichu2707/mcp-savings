@@ -1,6 +1,7 @@
 import {
   EMPTY_TOKEN_USAGE,
   humanizeTokens,
+  splitPayAndSaved,
   type ServerMeasurement,
   type Snapshot,
 } from "@javilazaro/mcp-savings-core";
@@ -59,13 +60,12 @@ function byTokensDesc(a: ServerMeasurement, b: ServerMeasurement): number {
  * is what makes this function actually pure — and therefore testable without
  * writing to the user's real ~/.config/mcp-savings/snapshot.json.
  *
- * HONESTY NOTE: PAY and SAVED are two DIFFERENT numbers, never combined.
- * PAY = tokens of servers currently connected (what you pay every request).
- * SAVED = tokens of servers OpenCode itself has `enabled: false` for (what
- * you've already stopped paying). Flipping mcp-savings' own
- * `disabledByDefault` config does nothing to this number — only OpenCode's
- * `mcp.<name>.enabled` does, because only that actually stops the schema
- * from being sent. See opencodeConfig.ts.
+ * HONESTY NOTE: PAY and SAVED are two DIFFERENT numbers, never combined —
+ * see core's splitPayAndSaved for the rule and its reasoning. Worth
+ * repeating here only because it is the sidebar's whole point: flipping
+ * mcp-savings' own `disabledByDefault` config does NOTHING to the SAVED
+ * figure. Only OpenCode's `mcp.<name>.enabled` does, because only that
+ * actually stops the schema from being sent. See opencodeConfig.ts.
  *
  * BOUNDED HEIGHT: never emits more than `MAX_PANEL_ROWS` rows, regardless of
  * how many MCP servers are configured — never one row per server.
@@ -86,40 +86,26 @@ export function computeRows(snapshot: Snapshot | undefined): PanelRow[] {
     return rows;
   }
 
-  // `enabled` missing (older snapshot, predating this field) is treated as
-  // `true` — a server we measured without knowing its enabled state was, by
-  // definition, connected. See ServerMeasurement.enabled's doc in measure.ts.
-  const enabled = measurement.filter((result) => result.enabled !== false);
-  const disabled = measurement.filter((result) => result.enabled === false);
-
-  // HONESTY NOTE: only `ok` servers contribute to the headline/bars/rollup —
-  // an errored server has no measured tokens to add or bar to scale, and
-  // silently treating it as 0 would understate nothing but also claim a
-  // precision we don't have. `report`'s dialog (command.ts) is the place
-  // that surfaces per-server errors explicitly.
-  const enabledOk = enabled.filter((result) => result.ok);
-  const payTokens = enabledOk.some((result) => result.tokens === null)
-    ? null
-    : enabledOk.reduce((sum, result) => sum + (result.tokens ?? 0), 0);
+  // The PAY/SAVED rule itself lives in core's splitPayAndSaved — shared with
+  // the CLI's `report` and the TUI's report dialog, so the three surfaces
+  // cannot drift apart. See that function's doc for why `enabled` missing
+  // means connected, why failed servers contribute to neither figure, and
+  // why one null token count poisons its whole side.
+  const { enabledOk, disabled, payTokens, payCount, savedBytes, savedTokens } =
+    splitPayAndSaved(measurement);
 
   rows.push({
     kind: "headline",
     payLabel: payTokens === null ? "n/a" : humanizeTokens(payTokens),
-    count: enabledOk.length,
+    count: payCount,
   });
 
-  // SAVED is realized, not potential — gated on bytes (always exact) rather
-  // than tokens (can be `null` for models without a local tokenizer) so a
-  // real-but-unmeasured saving still shows as "n/a" instead of silently
-  // vanishing. Only shown when there's something to show: a fleet with no
-  // disabled servers (the common case today) renders no SAVED line at all,
-  // rather than a useless "SAVED 0".
-  const disabledOk = disabled.filter((result) => result.ok);
-  const disabledBytes = disabledOk.reduce((sum, result) => sum + result.bytes, 0);
-  if (disabledBytes > 0) {
-    const savedTokens = disabledOk.some((result) => result.tokens === null)
-      ? null
-      : disabledOk.reduce((sum, result) => sum + (result.tokens ?? 0), 0);
+  // Gated on BYTES, not tokens: bytes are always exact, so a real saving
+  // whose token count is unknown still shows as "n/a" instead of silently
+  // vanishing. Only rendered when there is something to render — a fleet
+  // with nothing turned off gets no SAVED line rather than a useless
+  // "SAVED 0" taking up a row.
+  if (savedBytes > 0) {
     rows.push({
       kind: "saved",
       savedLabel: savedTokens === null ? "n/a" : humanizeTokens(savedTokens),

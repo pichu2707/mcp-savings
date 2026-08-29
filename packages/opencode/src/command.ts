@@ -5,9 +5,11 @@ import {
   EMPTY_TOKEN_USAGE,
   humanizeBytes,
   humanizeTokens,
+  isMeasurementFresh,
   loadSnapshot,
   measureServers,
   readOpencodeMcpSpecs,
+  splitPayAndSaved,
   type ServerMeasurement,
   type Snapshot,
 } from "@javilazaro/mcp-savings-core";
@@ -27,16 +29,6 @@ const DIALOG_BAR_WIDTH = 20;
 /** Server-name column width in the dialog's per-server rows. */
 const DIALOG_NAME_WIDTH = 24;
 
-/**
- * Mirrors cli.ts's `MCP_MEASUREMENT_TTL_MS`: a persisted `mcpMeasurement` is
- * trusted for 1 hour (matches `snapshot.timestamp`'s refresh cadence — see
- * plugin.ts's `persist()`) before we re-measure live instead of showing a
- * stale one. Not exported from @javilazaro/mcp-savings-core (it's cli.ts-local), so
- * duplicated here rather than reaching into cli.ts's internals — see
- * cli.ts's own comment for the full reasoning.
- */
-const MCP_MEASUREMENT_TTL_MS = 60 * 60 * 1000;
-
 interface ResolvedMeasurement {
   results: ServerMeasurement[];
   /** `true` when we measured live just now instead of reusing the snapshot. */
@@ -54,9 +46,7 @@ async function resolveMeasurement(
   snapshot: Snapshot | undefined,
   model: string,
 ): Promise<ResolvedMeasurement> {
-  const isFresh =
-    snapshot?.mcpMeasurement !== undefined && Date.now() - snapshot.timestamp < MCP_MEASUREMENT_TTL_MS;
-  if (isFresh) return { results: snapshot.mcpMeasurement!, live: false };
+  if (isMeasurementFresh(snapshot)) return { results: snapshot.mcpMeasurement, live: false };
 
   // `specs` includes `enabled: false` servers on purpose — measuring one
   // briefly spawns/connects to it even though it's off; see measure.ts's
@@ -111,27 +101,15 @@ function renderServerRow(result: ServerMeasurement, maxTokens: number) {
 function buildReportContent(snapshot: Snapshot | undefined, resolved: ResolvedMeasurement) {
   const tokens = snapshot?.sessionTokens ?? EMPTY_TOKEN_USAGE;
 
-  // HONESTY NOTE: PAY and SAVED are two different numbers, never combined —
-  // see cli.ts's `splitPayAndSaved`/`printPayAndSaved`, which this mirrors so
-  // the in-TUI report and the CLI report never disagree. `enabled` missing
-  // (older snapshot data) is treated as `true` — see ServerMeasurement's doc
-  // in measure.ts.
-  const enabledResults = resolved.results.filter((result) => result.enabled !== false);
-  const disabledResults = resolved.results.filter((result) => result.enabled === false);
+  // The same splitPayAndSaved the CLI's `report` and the sidebar use — one
+  // implementation, so this dialog and `mcp-savings report` cannot disagree
+  // about what you pay versus what you already saved. See that function's
+  // doc for why the two figures are never added together.
+  const { enabledOk, payBytes, payTokens, payCount, savedBytes, savedTokens, savedCount } =
+    splitPayAndSaved(resolved.results);
 
-  const enabledOk = enabledResults.filter((result) => result.ok);
-  const payBytes = enabledOk.reduce((sum, result) => sum + result.bytes, 0);
-  const payTokens = enabledOk.some((result) => result.tokens === null)
-    ? null
-    : enabledOk.reduce((sum, result) => sum + (result.tokens ?? 0), 0);
   const maxTokens = Math.max(1, ...enabledOk.map((result) => result.tokens ?? 0));
   const payTokensText = payTokens === null ? "n/a" : `~${humanizeTokens(payTokens)}`;
-
-  const disabledOk = disabledResults.filter((result) => result.ok);
-  const savedBytes = disabledOk.reduce((sum, result) => sum + result.bytes, 0);
-  const savedTokens = disabledOk.some((result) => result.tokens === null)
-    ? null
-    : disabledOk.reduce((sum, result) => sum + (result.tokens ?? 0), 0);
 
   const rows = [
     jsx("text", { fg: RUST_ACCENT, children: "◢ mcp savings — full report" }),
@@ -152,7 +130,7 @@ function buildReportContent(snapshot: Snapshot | undefined, resolved: ResolvedMe
     ...resolved.results.map((result) => renderServerRow(result, maxTokens)),
     jsx("text", { children: "" }),
     jsx("text", {
-      children: `PAY   ~${humanizeBytes(payBytes)} / ${payTokensText} per request — ${enabledOk.length} enabled server(s) (estimated; tokens exact only for OpenAI models).`,
+      children: `PAY   ~${humanizeBytes(payBytes)} / ${payTokensText} per request — ${payCount} enabled server(s) (estimated; tokens exact only for OpenAI models).`,
     }),
     // Only rendered when there's a realized saving — see panel.ts's
     // `computeRows` for the same "don't show a useless SAVED 0" reasoning.
@@ -161,7 +139,7 @@ function buildReportContent(snapshot: Snapshot | undefined, resolved: ResolvedMe
           jsx("text", {
             children: `SAVED ~${humanizeBytes(savedBytes)} / ${
               savedTokens === null ? "n/a" : `~${humanizeTokens(savedTokens)}`
-            } per request — already skipped by ${disabledOk.length} disabled server(s).`,
+            } per request — already skipped by ${savedCount} disabled server(s).`,
           }),
         ]
       : []),
