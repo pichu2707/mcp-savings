@@ -5,14 +5,49 @@ import type { ServerSpec } from "./measure.js";
 
 const DEFAULT_CONFIG_PATH = "~/.config/opencode/opencode.json";
 
-/** Raw shape of a single entry under OpenCode config's `mcp` object. */
+/**
+ * Raw shape of a single entry under OpenCode config's `mcp` object.
+ *
+ * Checked against OpenCode's own generated schema (`McpLocalConfig` /
+ * `McpRemoteConfig` in @opencode-ai/sdk's types.gen.d.ts), which is the
+ * authority here:
+ *
+ *   McpLocalConfig:  { type: "local",  command: string[], environment?, enabled?, timeout? }
+ *   McpRemoteConfig: { type: "remote", url: string, headers?, oauth?, enabled?, timeout? }
+ *
+ * Two consequences are encoded below.
+ *
+ * `environment` is OpenCode's field name for a server's environment
+ * variables. Reading only `env` meant they were silently dropped, and the
+ * MCP SDK gives a child process with no explicit environment just HOME,
+ * LOGNAME, PATH, SHELL, TERM and USER — so any server needing an API key or
+ * a database path failed to start, came back `ok: false`, and vanished from
+ * the report entirely. `env` is still accepted as a tolerated alias: this is
+ * a best-effort reader, and a hand-written config using the shorter name
+ * should keep working.
+ *
+ * `args` does NOT exist in OpenCode's schema at all — `command` is an array
+ * documented as "Command and arguments to run the MCP server". It is still
+ * accepted for hand-written or non-OpenCode configs, but nothing OpenCode
+ * writes will ever carry it. See `toServerSpec` for what it does when both
+ * are present.
+ */
 interface OpencodeMcpEntry {
   type?: string;
   enabled?: boolean;
   url?: string;
   command?: string | string[];
+  /** Not part of OpenCode's schema — see the note above. */
   args?: string[];
+  /** OpenCode's own name for the child process environment. */
+  environment?: Record<string, string>;
+  /** Tolerated alias for `environment`, for hand-written configs. */
   env?: Record<string, string>;
+}
+
+/** OpenCode writes `environment`; `env` is accepted as an alias. */
+function environmentOf(entry: OpencodeMcpEntry): Record<string, string> | undefined {
+  return entry.environment ?? entry.env;
 }
 
 function expandHome(path: string): string {
@@ -47,6 +82,10 @@ function toServerSpec(name: string, entry: OpencodeMcpEntry): ServerSpec | undef
     return { name, transport: "http", url: entry.url, enabled };
   }
 
+  // An explicit `args` REPLACES whatever `command` carried, rather than
+  // appending to it. OpenCode never emits `args` (see OpencodeMcpEntry), so
+  // this only affects hand-written configs — where "the explicit field wins"
+  // is the least surprising of the available readings.
   if (typeof entry.command === "string" && entry.command.length > 0) {
     const { command, args } = splitCommandString(entry.command);
     if (!command) return undefined;
@@ -55,7 +94,7 @@ function toServerSpec(name: string, entry: OpencodeMcpEntry): ServerSpec | undef
       transport: "stdio",
       command,
       args: entry.args ?? args,
-      env: entry.env,
+      env: environmentOf(entry),
       enabled,
     };
   }
@@ -68,7 +107,7 @@ function toServerSpec(name: string, entry: OpencodeMcpEntry): ServerSpec | undef
       transport: "stdio",
       command,
       args: entry.args ?? args,
-      env: entry.env,
+      env: environmentOf(entry),
       enabled,
     };
   }

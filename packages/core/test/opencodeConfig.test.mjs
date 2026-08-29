@@ -153,7 +153,29 @@ test("an empty `url` falls through to `command` instead of producing a broken ht
   assert.equal(spec.command, "engram-server");
 });
 
-test("`env` is carried through to stdio servers", () => {
+test("`environment` — OpenCode's own field name — reaches the spawned server", () => {
+  // REGRESSION. This reader looked only at `env`, while OpenCode's schema
+  // (McpLocalConfig in @opencode-ai/sdk's types.gen.d.ts) names the field
+  // `environment`. Every variable was silently dropped, and the MCP SDK
+  // gives a child with no explicit environment just HOME, LOGNAME, PATH,
+  // SHELL, TERM and USER — so a server needing an API key or a database
+  // path failed to start, came back ok:false, and vanished from the report.
+  const [spec] = readConfig({
+    mcp: {
+      engram: {
+        type: "local",
+        command: ["engram-server"],
+        environment: { ENGRAM_DB: "/tmp/db", API_KEY: "secret" },
+      },
+    },
+  });
+
+  assert.deepEqual(spec.env, { ENGRAM_DB: "/tmp/db", API_KEY: "secret" });
+});
+
+test("`env` is still accepted as an alias for hand-written configs", () => {
+  // This is a best-effort reader, not a schema validator. Dropping the
+  // shorter name would break configs that work today.
   const [spec] = readConfig({
     mcp: { engram: { command: "engram-server", env: { ENGRAM_DB: "/tmp/db" } } },
   });
@@ -161,19 +183,67 @@ test("`env` is carried through to stdio servers", () => {
   assert.deepEqual(spec.env, { ENGRAM_DB: "/tmp/db" });
 });
 
+test("`environment` wins when a config somehow carries both", () => {
+  // OpenCode's own name is the authoritative one.
+  const [spec] = readConfig({
+    mcp: {
+      engram: {
+        command: "engram-server",
+        environment: { FROM: "environment" },
+        env: { FROM: "env" },
+      },
+    },
+  });
+
+  assert.deepEqual(spec.env, { FROM: "environment" });
+});
+
+test("a server with no environment configured gets undefined, not an empty object", () => {
+  // `{}` would tell the MCP SDK "run with exactly nothing", stripping even
+  // PATH. undefined lets it apply its own default inherited set.
+  const [spec] = readConfig({ mcp: { engram: { command: ["engram-server"] } } });
+
+  assert.equal(spec.env, undefined);
+});
+
+test("the shapes OpenCode actually writes are read correctly", () => {
+  // Taken from a real ~/.config/opencode/opencode.json: a remote server with
+  // `type`+`url`+`enabled`, and a local one with `type`+`command` array.
+  // `type` is present but unused — the transport is inferred from which of
+  // url/command is there, which agrees with the discriminator in both cases.
+  const specs = byName(
+    readConfig({
+      mcp: {
+        context7: { enabled: true, type: "remote", url: "https://mcp.context7.com/mcp" },
+        engram: { type: "local", command: ["npx", "-y", "@scope/engram"] },
+      },
+    }),
+  );
+
+  assert.equal(specs.context7.transport, "http");
+  assert.equal(specs.context7.url, "https://mcp.context7.com/mcp");
+  assert.equal(specs.context7.enabled, true);
+
+  assert.equal(specs.engram.transport, "stdio");
+  assert.equal(specs.engram.command, "npx");
+  assert.deepEqual(specs.engram.args, ["-y", "@scope/engram"]);
+  assert.equal(specs.engram.enabled, true, "no `enabled` key means enabled");
+});
+
 // ---------------------------------------------------------------------------
-// `args` precedence — CHARACTERISATION, not endorsement
+// `args` precedence — a field OpenCode never writes
 // ---------------------------------------------------------------------------
 //
-// `args: entry.args ?? args` REPLACES the args derived from `command`, it
-// does not append to them. These tests record what that does today so it
-// cannot change by accident; whether it is the right reading of OpenCode's
-// schema is an open question for someone who knows that schema.
+// RESOLVED against OpenCode's generated schema: `McpLocalConfig` has no
+// `args` field at all. `command` is a string array documented as "Command
+// and arguments to run the MCP server", and a real opencode.json carries
+// exactly that. So nothing OpenCode produces can reach these branches.
 //
-// It matters because the failure is silent in the usual way: a server
-// spawned without its package name simply fails, comes back `ok: false`, is
-// excluded from both PAY and SAVED, and vanishes from the report as if it
-// had never been configured.
+// They are kept for hand-written and non-OpenCode configs, where "the
+// explicit field wins" is the least surprising available reading. These
+// tests pin that reading — including the sharp edge that `args: []` is an
+// instruction rather than an absence, since ?? only falls through on
+// null/undefined.
 
 test("an explicit `args` REPLACES args parsed out of a command string", () => {
   const [spec] = readConfig({

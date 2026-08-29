@@ -23,12 +23,21 @@
 // gets weighed correctly, and a mock would only prove that the mock matches
 // my assumptions about the SDK.
 
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 
-import { measureServer, measureServers, utf8Bytes } from "../dist/index.js";
+import {
+  measureServer,
+  measureServers,
+  readOpencodeMcpSpecs,
+  utf8Bytes,
+} from "../dist/index.js";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const FIXTURE = "test/fixtures/mcp-server.mjs";
+const ENV_FIXTURE = "test/fixtures/env-server.mjs";
 
 /** A spec pointing at the real fixture server, exposing `tools` tools. */
 const fixture = (name, tools = 2, enabled = true) => ({
@@ -184,6 +193,68 @@ test("CHARACTERISATION: a hung server times out, but cleanup adds ~2s beyond the
   assert.match(result.error, /Timed out after 300ms measuring server "hang"/);
   assert.ok(elapsed >= 300, "it must not return before the deadline");
   assert.ok(elapsed < 6000, `cleanup should not be unbounded (took ${elapsed}ms)`);
+});
+
+// ---------------------------------------------------------------------------
+// Configured environment actually reaches the spawned process
+// ---------------------------------------------------------------------------
+//
+// This is the one test in the suite that spans the whole chain: an OpenCode
+// config on disk -> readOpencodeMcpSpecs -> measureServers -> a real child
+// process -> the tool names it reports back. It exists because that chain
+// had a break in it, and nothing anywhere could see the break.
+//
+// opencodeConfig read `env` while OpenCode's schema writes `environment`, so
+// every configured variable was dropped. The MCP SDK gives a child with no
+// explicit environment just HOME, LOGNAME, PATH, SHELL, TERM and USER, so a
+// server needing an API key or a database path failed to start, came back
+// ok:false, was excluded from both PAY and SAVED, and vanished from the
+// report exactly as if it had never been configured.
+//
+// The fixture names its only tool after the variable, which is what turns an
+// invisible failure into something an assertion can catch.
+
+const envConfigDir = mkdtempSync(join(tmpdir(), "mcp-savings-env-"));
+after(() => rmSync(envConfigDir, { recursive: true, force: true }));
+
+/** Writes an OpenCode config for the env fixture and measures it for real. */
+async function measureEnvFixture(entry) {
+  const path = join(envConfigDir, `${Math.random().toString(36).slice(2)}.json`);
+  writeFileSync(path, JSON.stringify({ mcp: { envcheck: entry } }), "utf8");
+  const [result] = await measureServers(readOpencodeMcpSpecs(path), "gpt-4o");
+  return result;
+}
+
+test("REGRESSION: `environment` from an OpenCode config reaches the child process", async () => {
+  const result = await measureEnvFixture({
+    type: "local",
+    command: ["node", ENV_FIXTURE],
+    environment: { MCP_SAVINGS_PROBE: "OK" },
+  });
+
+  assert.equal(result.ok, true, result.error);
+  assert.deepEqual(
+    result.tools.map((tool) => tool.name),
+    ["received-OK"],
+    "the configured variable did not reach the spawned server",
+  );
+});
+
+test("the tolerated `env` alias reaches the child process too", async () => {
+  const result = await measureEnvFixture({
+    command: ["node", ENV_FIXTURE],
+    env: { MCP_SAVINGS_PROBE: "OK" },
+  });
+
+  assert.deepEqual(result.tools.map((tool) => tool.name), ["received-OK"]);
+});
+
+test("a server configured with no environment simply gets none", async () => {
+  // The baseline that makes the two tests above mean something: without it,
+  // they would pass even if the fixture reported "received" unconditionally.
+  const result = await measureEnvFixture({ command: ["node", ENV_FIXTURE] });
+
+  assert.deepEqual(result.tools.map((tool) => tool.name), ["environment-was-not-passed"]);
 });
 
 // ---------------------------------------------------------------------------
