@@ -26,6 +26,14 @@ import type { ServerWeight, ToolWeight } from "./types.js";
  * want their bytes visible so a user can see "how much of my tool schema
  * budget is MCP vs. built-in").
  *
+ * Matching is LONGEST-PREFIX-WINS across every configured server, not
+ * first-server-wins. Server names collide in practice — a base server and its
+ * specialised companion (`notion` / `notion_db`, `vercel` / `vercel_ai`) — and
+ * the loose single-underscore fallback `notion_` matches an id that really
+ * belongs to `notion_db`. Deciding that by config order files the bytes under
+ * the wrong server, and because the totals still add up the report looks
+ * perfectly healthy while describing the wrong world.
+ *
  * If you add/rename MCP servers with unusual naming, adjust
  * `candidatePrefixesFor` below rather than the matching loop.
  * ============================================================================
@@ -33,7 +41,7 @@ import type { ServerWeight, ToolWeight } from "./types.js";
 
 export const UNATTRIBUTED_SERVER = "(built-in / unattributed)";
 
-/** Generates the id-prefix patterns we'll try to match, longest-first. */
+/** The id-prefix patterns a single server can be recognised by. */
 function candidatePrefixesFor(serverName: string): string[] {
   const lower = serverName.toLowerCase();
   return [
@@ -42,6 +50,26 @@ function candidatePrefixesFor(serverName: string): string[] {
     `${lower}__`,
     `${lower}_`,
   ];
+}
+
+interface PrefixCandidate {
+  server: string;
+  prefix: string;
+}
+
+/**
+ * Every (server, prefix) pair, ordered longest prefix first, so the most
+ * specific server name wins regardless of the order servers were configured
+ * in. Two distinct prefixes of equal length cannot both match the same id
+ * unless they are identical (i.e. server names differing only in case); the
+ * sort is stable, so config order breaks that tie deterministically.
+ */
+function rankedCandidates(serverNames: readonly string[]): PrefixCandidate[] {
+  return serverNames
+    .flatMap((server) =>
+      candidatePrefixesFor(server).map((prefix) => ({ server, prefix })),
+    )
+    .sort((a, b) => b.prefix.length - a.prefix.length);
 }
 
 /**
@@ -57,12 +85,13 @@ export function attributeToServers(
   for (const name of serverNames) buckets.set(name, []);
   buckets.set(UNATTRIBUTED_SERVER, []);
 
+  // Built once for the whole tool list, not per tool.
+  const candidates = rankedCandidates(serverNames);
+
   for (const weight of weights) {
     const idLower = weight.id.toLowerCase();
-    const match = serverNames.find((serverName) =>
-      candidatePrefixesFor(serverName).some((prefix) => idLower.startsWith(prefix)),
-    );
-    const bucket = buckets.get(match ?? UNATTRIBUTED_SERVER)!;
+    const match = candidates.find(({ prefix }) => idLower.startsWith(prefix));
+    const bucket = buckets.get(match?.server ?? UNATTRIBUTED_SERVER)!;
     bucket.push(weight);
   }
 
