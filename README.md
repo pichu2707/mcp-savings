@@ -175,6 +175,12 @@ snapshot, so it reads the transcripts instead and measures live every time.
 Note that it briefly starts servers you have disabled, because measuring one
 is the only way to know what turning it off actually saved.
 
+## What is not done
+
+[`ROADMAP.md`](ROADMAP.md) records what is deliberately left undone, what is
+blocked and on what evidence, and the gotchas that cost time once already —
+so nobody re-investigates a dead end from scratch.
+
 ## Development
 
 ```
