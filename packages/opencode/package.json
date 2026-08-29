@@ -1,6 +1,6 @@
 {
   "name": "@javilazaro/mcp-savings-opencode",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "description": "OpenCode host adapter for mcp-savings: measures real token usage and MCP tool schema weight from inside a running OpenCode session.",
   "keywords": [
