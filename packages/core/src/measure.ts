@@ -98,6 +98,14 @@ function createTransport(spec: ServerSpec): Transport {
  *    child process, or opening the initial HTTP connection) happens before
  *    any per-request timeout option would apply, so a hang there needs its
  *    own guard too.
+ *
+ * NOT covered by `timeoutMs`: the cleanup in the `finally` below. The MCP
+ * SDK's stdio transport signals the child and waits for it before resolving
+ * `close()`, so measuring an unresponsive stdio server resolves roughly two
+ * seconds AFTER the deadline — a flat cost, independent of the timeout
+ * chosen, paid once per `measureServers` concurrency batch. Measured and
+ * pinned in measure.test.mjs. The budget bounds how long we WAIT for an
+ * answer, not how long it takes to tidy up after not getting one.
  */
 export async function measureServer(
   spec: ServerSpec,
