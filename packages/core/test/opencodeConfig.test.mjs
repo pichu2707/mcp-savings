@@ -414,3 +414,31 @@ test("servers keep the order they appear in the config", () => {
 
   assert.deepEqual(specs.map((spec) => spec.name), ["zulu", "alpha", "mike"]);
 });
+
+// ---------------------------------------------------------------------------
+// OpenCode v2 spells the same switch `disabled` (the inverse of `enabled`)
+// ---------------------------------------------------------------------------
+
+test("`disabled: true` (OpenCode v2) disables a server, and it is still KEPT", () => {
+  // v2's own config schema has no `enabled`; reading only `enabled` would
+  // file a v2-disabled server under PAY and report a cost nobody pays.
+  const specs = byName(
+    readConfig({
+      mcp: {
+        off: { command: "a", disabled: true },
+        on: { command: "b", disabled: false },
+        implicit: { command: "c" },
+      },
+    }),
+  );
+
+  assert.equal(specs.off.enabled, false);
+  assert.equal(specs.on.enabled, true);
+  assert.equal(specs.implicit.enabled, true);
+});
+
+test("an explicit `enabled` still wins over `disabled` when both are present", () => {
+  const [spec] = readConfig({ mcp: { odd: { command: "a", enabled: true, disabled: true } } });
+
+  assert.equal(spec.enabled, true);
+});

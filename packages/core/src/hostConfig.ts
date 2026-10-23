@@ -62,6 +62,8 @@ export function expandHome(path: string): string {
 export interface McpEntry {
   type?: string;
   enabled?: boolean;
+  /** OpenCode v2's spelling of the same switch, inverted (`disabled: true` = off). */
+  disabled?: boolean;
   url?: string;
   command?: string | string[];
   /** Not part of OpenCode's schema — see the note above. */

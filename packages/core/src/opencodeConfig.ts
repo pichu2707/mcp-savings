@@ -40,9 +40,11 @@ export function readOpencodeMcpSpecs(configPath: string = DEFAULT_CONFIG_PATH): 
     if (typeof rawEntry !== "object" || rawEntry === null) continue;
     // Absence of `enabled` means OpenCode treats the server as connected —
     // its default is `true`, not `false` — so only an explicit `false`
-    // counts as disabled.
+    // counts as disabled. OpenCode v2 spells the same switch `disabled`
+    // (inverted); an explicit `enabled` wins if both are present.
     const entry = rawEntry as McpEntry;
-    const spec = toServerSpec(name, entry, entry.enabled !== false);
+    const enabled = typeof entry.enabled === "boolean" ? entry.enabled : entry.disabled !== true;
+    const spec = toServerSpec(name, entry, enabled);
     if (spec) specs.push(spec);
   }
   return specs;
