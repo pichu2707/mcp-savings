@@ -72,5 +72,23 @@ export function createRecorder(readLiveEnabledState: () => Promise<Map<string, b
     })();
   }
 
-  return { meter, persist, refreshMcpMeasurementInBackground };
+  /**
+   * Re-applies the host's live connection state to the measurement already in
+   * the snapshot, without re-measuring anything. For hosts that signal a
+   * server being toggled (v2's `mcp.status.changed`), so a server switched on
+   * or off from the UI is reflected right away instead of at the next idle.
+   * Does nothing when there is no measurement yet: absent is never fabricated.
+   */
+  async function refreshLiveEnabledState(): Promise<void> {
+    try {
+      const latest = loadSnapshot();
+      if (!latest?.mcpMeasurement) return;
+      const liveStates = await readLiveEnabledState();
+      saveSnapshot({ ...latest, mcpMeasurement: applyLiveEnabledState(latest.mcpMeasurement, liveStates) });
+    } catch (err) {
+      console.error("[mcp-savings] could not refresh live MCP state (non-fatal):", err);
+    }
+  }
+
+  return { meter, persist, refreshMcpMeasurementInBackground, refreshLiveEnabledState };
 }

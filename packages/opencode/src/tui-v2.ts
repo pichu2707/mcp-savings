@@ -1,5 +1,7 @@
 import type { Plugin } from "@opencode/plugin/tui";
 import { jsx, mountWithRenderer } from "./jsx.js";
+import { logDiagnostic } from "./diag.js";
+import { solidSource } from "./solid.js";
 import { Panel } from "./panel.js";
 import { loadReportView } from "./command.js";
 
@@ -22,7 +24,15 @@ const REPORT_COMMAND = "mcp-savings.report";
  */
 export function setupTuiV2(ctx: Plugin.Context): () => void {
   const disposers = new Set<() => void>();
-  const mount = (build: () => unknown) => mountWithRenderer(ctx.renderer, disposers, build) as never;
+  logDiagnostic(`setup: OpenCode ${ctx.app.version}, solid=${JSON.stringify(solidSource)}`);
+  const mount = (build: () => unknown) => {
+    try {
+      return mountWithRenderer(ctx.renderer, disposers, build) as never;
+    } catch (err) {
+      logDiagnostic(`render failed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
+      throw err;
+    }
+  };
   ctx.ui.slot({
     append: "sidebar.content",
     render: () => mount(() => Panel()),

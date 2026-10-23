@@ -20,6 +20,8 @@ type Context = Plugin.Context;
  *       of what v1 could see — MCP tools are included here.
  *   v1 `client.mcp.status()`                        ->  v2 `ctx.mcp.list()`.
  *   v1 `session.idle`                               ->  v2 `session.idle`.
+ *   (new in v2) `mcp.status.changed` re-applies the live connection state, so a
+ *       server toggled from the TUI's /mcp dialog shows up without a new message.
  *
  * Everything downstream (metering, snapshot, background MCP measurement) is
  * the shared recorder.ts, so both hosts write the same snapshot.
@@ -67,6 +69,11 @@ export async function setupV2(ctx: Context): Promise<() => void> {
       } else {
         recorder.persist(undefined);
       }
+      return;
+    }
+
+    if (event.type === "mcp.status.changed") {
+      await recorder.refreshLiveEnabledState();
       return;
     }
 
