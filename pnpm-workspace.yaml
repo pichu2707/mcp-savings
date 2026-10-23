@@ -5,7 +5,21 @@ allowBuilds:
   # (msgpack encode/decode) pulled in by the OpenCode SDK toolchain; it has
   # a pure-JS fallback and isn't needed for typecheck/build, so we don't
   # grant it permission to run install scripts.
+  # esbuild (bundles the TUI entry): its postinstall only validates the
+  # binary, which the optional platform package already provides.
+  esbuild: false
   msgpackr-extract: false
   # protobufjs (transitive of @opencode/plugin, types-only devDependency)
   # ships an optional postinstall we do not need.
   protobufjs: false
+minimumReleaseAgeExclude:
+  - '@opentui/core-darwin-arm64@0.6.8'
+  - '@opentui/core-darwin-x64@0.6.8'
+  - '@opentui/core-linux-arm64-musl@0.6.8'
+  - '@opentui/core-linux-arm64@0.6.8'
+  - '@opentui/core-linux-x64-musl@0.6.8'
+  - '@opentui/core-linux-x64@0.6.8'
+  - '@opentui/core-win32-arm64@0.6.8'
+  - '@opentui/core-win32-x64@0.6.8'
+  - '@opentui/core@0.6.8'
+  - '@opentui/solid@0.6.8'

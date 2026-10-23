@@ -4,7 +4,9 @@ OpenCode host adapter for [mcp-savings](https://github.com/pichu2707/mcp-savings
 Measures real token usage and MCP tool schema weight from inside a running
 OpenCode session.
 
-Dual export: an `event`-hook server plugin plus a `tui` panel plugin.
+Dual export: a server plugin (metering) plus a TUI panel plugin. Metering works
+on OpenCode 1.x and 2.x; the sidebar panel and the `/savings` report require
+OpenCode 2.x.
 
 by [Javi Lázaro](https://github.com/pichu2707) · MIT
 
