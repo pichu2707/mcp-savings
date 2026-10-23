@@ -18,10 +18,16 @@ import type * as OpentuiSolid from "@opentui/solid";
  */
 const RUNTIME_MODULE_PREFIX = "opentui:runtime-module:";
 
+/** Which source each module came from, for the TUI diagnostic log. */
+export const solidSource: Record<string, "host" | "installed"> = {};
+
 async function load<T>(specifier: string, installed: () => Promise<T>): Promise<T> {
   try {
-    return (await import(RUNTIME_MODULE_PREFIX + encodeURIComponent(specifier))) as T;
+    const mod = (await import(RUNTIME_MODULE_PREFIX + encodeURIComponent(specifier))) as T;
+    solidSource[specifier] = "host";
+    return mod;
   } catch {
+    solidSource[specifier] = "installed";
     return installed();
   }
 }

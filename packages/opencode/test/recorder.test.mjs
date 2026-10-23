@@ -53,3 +53,47 @@ test("persist(undefined) carries the previous weights forward instead of zeroing
     assert.equal(snapshot.sessionTokens.input, 3);
   });
 });
+
+const measurement = (server, enabled) => ({ server, ok: true, enabled, bytes: 5, tokens: 2, tools: [] });
+
+test("refreshLiveEnabledState re-applies live connection state to the stored measurement", async () => {
+  // A server toggled from the TUI's /mcp dialog fires mcp.status.changed, not a
+  // new message: without this the report keeps the state from the last idle.
+  const previous = process.env.HOME;
+  const home = mkdtempSync(join(tmpdir(), "mcpsav-rec-"));
+  process.env.HOME = home;
+  try {
+    let live = new Map([["context7", false]]);
+    const recorder = createRecorder(async () => live);
+    recorder.persist(weights);
+    const { loadSnapshot, saveSnapshot } = await import("@javilazaro/mcp-savings-core");
+    saveSnapshot({ ...loadSnapshot(), mcpMeasurement: [measurement("context7", false), measurement("engram", true)] });
+
+    live = new Map([["context7", true]]);
+    await recorder.refreshLiveEnabledState();
+
+    const byName = Object.fromEntries(loadSnapshot().mcpMeasurement.map((m) => [m.server, m.enabled]));
+    assert.equal(byName.context7, true);
+    assert.equal(byName.engram, true, "a server with no live state keeps its measured state");
+  } finally {
+    process.env.HOME = previous;
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("refreshLiveEnabledState does nothing when there is no measurement yet", async () => {
+  await (async () => {
+    const previous = process.env.HOME;
+    const home = mkdtempSync(join(tmpdir(), "mcpsav-rec-"));
+    process.env.HOME = home;
+    try {
+      const recorder = createRecorder(async () => new Map([["context7", true]]));
+      await recorder.refreshLiveEnabledState();
+      const { loadSnapshot } = await import("@javilazaro/mcp-savings-core");
+      assert.equal(loadSnapshot(), undefined, "absent is never fabricated");
+    } finally {
+      process.env.HOME = previous;
+      rmSync(home, { recursive: true, force: true });
+    }
+  })();
+});

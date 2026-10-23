@@ -170,3 +170,25 @@ test("cleanup stops the event subscription", async () => {
     assert.equal(existsSync(snapshotFile), false, "an event after cleanup must not be recorded");
   });
 });
+
+test("an mcp.status.changed event refreshes the stored server state without a new message", async () => {
+  await withTempHome(async (snapshotFile) => {
+    const servers = [{ name: "context7", status: { status: "disabled" } }];
+    const { ctx, hooks, stream } = fakeContext(servers);
+    const cleanup = await setupV2(ctx);
+    await hooks.context({ model: { id: "m1", providerID: "p1" }, tools: {} });
+    stream.push(stepEnded("a1"));
+    await waitFor(() => existsSync(snapshotFile), "the first snapshot");
+
+    const { loadSnapshot, saveSnapshot } = await import("@javilazaro/mcp-savings-core");
+    saveSnapshot({
+      ...loadSnapshot(),
+      mcpMeasurement: [{ server: "context7", ok: true, enabled: false, bytes: 5, tokens: 2, tools: [] }],
+    });
+
+    servers[0] = { name: "context7", status: { status: "connected" } };
+    stream.push({ type: "mcp.status.changed", data: { server: "context7" } });
+    await waitFor(() => loadSnapshot().mcpMeasurement[0].enabled === true, "context7 marked enabled");
+    cleanup();
+  });
+});
