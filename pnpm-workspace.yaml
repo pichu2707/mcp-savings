@@ -6,3 +6,6 @@ allowBuilds:
   # a pure-JS fallback and isn't needed for typecheck/build, so we don't
   # grant it permission to run install scripts.
   msgpackr-extract: false
+  # protobufjs (transitive of @opencode/plugin, types-only devDependency)
+  # ships an optional postinstall we do not need.
+  protobufjs: false

@@ -53,7 +53,7 @@ function renderRow(row: PanelRow) {
  * We call the JSX runtime (`jsx()`) directly because plain `tsc` can't run
  * Solid's JSX transform; the emitted tree is identical to compiled `.tsx`.
  */
-function Panel() {
+export function Panel() {
   const [rows, setRows] = createSignal(computeRows(loadSnapshot()));
   const timer = setInterval(() => setRows(computeRows(loadSnapshot())), 2000);
   onCleanup(() => clearInterval(timer));
