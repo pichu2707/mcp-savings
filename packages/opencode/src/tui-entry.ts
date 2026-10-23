@@ -1,19 +1,11 @@
-import type { TuiPluginModule } from "@opencode-ai/plugin/tui";
 import type { Plugin } from "@opencode/plugin/tui";
-import { tui } from "./panel.js";
 import { setupTuiV2 } from "./tui-v2.js";
 
 /**
- * TUI entry point — referenced by ~/.config/opencode/tui.json (a DIFFERENT
- * loader than opencode.json) and exposed as the package's `./tui` export.
- *
- * The default export carries BOTH contracts in one object, because each
- * loader only reads its own keys:
- *   - OpenCode v1 reads `{ id?, tui, server?: never }` and ignores `setup`.
- *   - OpenCode v2 reads `{ id, setup }` and ignores `tui`.
- * This is kept SEPARATE from the server plugin (plugin.ts / server.ts)
- * because the server loader needs `server`/`setup` while v1's TUI loader
- * forbids `server`. Two loaders, two shapes, two files.
+ * TUI entry point — the package's `./tui` export, read by OpenCode 2.x as a
+ * default `{ id, setup }` definition. v2 ONLY: OpenCode 1.x's TUI contract
+ * (`{ tui }`) is no longer provided, so the sidebar panel and `/savings` need
+ * OpenCode 2.x. Metering (the server plugin) still works on 1.x and 2.x.
  */
-const tuiModule: TuiPluginModule & Plugin.Definition = { id: "mcp-savings", tui, setup: setupTuiV2 };
+const tuiModule: Plugin.Definition = { id: "mcp-savings", setup: setupTuiV2 };
 export default tuiModule;

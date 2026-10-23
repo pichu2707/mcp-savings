@@ -1,5 +1,4 @@
-import type { TuiPluginApi } from "@opencode-ai/plugin/tui";
-import { jsx } from "@opentui/solid/jsx-runtime";
+import { jsx } from "./jsx.js";
 import {
   DEFAULT_MODEL,
   EMPTY_TOKEN_USAGE,
@@ -14,15 +13,6 @@ import {
   type Snapshot,
 } from "@javilazaro/mcp-savings-core";
 import { makeBar, RUST_ACCENT, truncateLabel } from "./render.js";
-
-/**
- * Command id shown in OpenCode's command palette (Ctrl+P). No keybinding is
- * registered — `api.keymap.registerLayer`'s `bindings` field is left unset
- * (see registerReportCommand below): the spec asked us to check existing
- * bindings first and leave the keybind unset if unsure of a free one, and
- * palette access alone satisfies "openable inside OpenCode, no terminal".
- */
-const REPORT_COMMAND = "mcp-savings.report";
 
 /** Bar width inside the (wider) report dialog — vs. the sidebar's 8-char bars. */
 const DIALOG_BAR_WIDTH = 20;
@@ -153,9 +143,8 @@ function buildReportContent(snapshot: Snapshot | undefined, resolved: ResolvedMe
 
 /**
  * Loads the snapshot and resolves the MCP measurement, then returns a thunk
- * that builds the full report's content tree. Host-agnostic: the v1 dialog
- * (below) and the v2 TUI plugin (tui-v2.ts) both show exactly this tree, so
- * the two cannot drift.
+ * that builds the full report's content tree. Shown by the v2 TUI
+ * plugin (tui-v2.ts) in its report dialog.
  *
  * The tree is built by the returned thunk, not here, on purpose: `jsx()`
  * needs an active renderer, which only exists while the host is rendering the
@@ -167,96 +156,4 @@ export async function loadReportView() {
   const model = snapshot?.model ?? DEFAULT_MODEL;
   const resolved = await resolveMeasurement(snapshot, model);
   return () => buildReportContent(snapshot, resolved);
-}
-
-/**
- * Opens the report dialog via the TUI's custom-content dialog API
- * (`api.ui.Dialog` + `api.ui.dialog.replace` — see TuiDialogProps/
- * TuiDialogStack in tui.d.ts), not `DialogSelect`/`DialogAlert`/etc. (those
- * render fixed, host-defined layouts; we need our own bar-chart content).
- *
- * Shows a "measuring…" placeholder immediately, then replaces it once
- * `resolveMeasurement` resolves — measuring live (the stale/missing-snapshot
- * fallback) connects to each MCP server over stdio/HTTP and can take a few
- * seconds, so we don't want the command to appear to hang with no dialog at
- * all in the meantime.
- */
-function openReportDialog(api: TuiPluginApi): void {
-  const close = () => api.ui.dialog.clear();
-
-  api.ui.dialog.replace(() =>
-    api.ui.Dialog({
-      size: "large",
-      onClose: close,
-      children: jsx("text", { children: "mcp-savings: measuring…" }),
-    }),
-  );
-
-  void (async () => {
-    try {
-      const view = await loadReportView();
-      api.ui.dialog.replace(() =>
-        api.ui.Dialog({
-          size: "large",
-          onClose: close,
-          children: view(),
-        }),
-      );
-    } catch (err) {
-      api.ui.dialog.replace(() =>
-        api.ui.Dialog({
-          size: "large",
-          onClose: close,
-          children: jsx("text", {
-            children: `mcp-savings: failed to build report — ${err instanceof Error ? err.message : String(err)}`,
-          }),
-        }),
-      );
-    }
-  })();
-}
-
-/**
- * Registers the "MCP savings: report" command so it's reachable INSIDE
- * OpenCode (no terminal). Registered TWO ways, matching the two working TUI
- * plugins installed on this machine (opencode-subagent-statusline,
- * opencode-sdd-engram-manage), because in this OpenCode version they differ:
- *   - `api.keymap.registerLayer` — modern API; sets up the command layer
- *     (category + a future keybinding via `bindings`) but on its own does NOT
- *     show the command in the palette.
- *   - `api.command.register` — marked `@deprecated` in tui.d.ts, but it is what
- *     actually populates the command palette (Ctrl+P) AND the `/savings` slash
- *     command. The working plugins call it defensively (`if (api.command?.…)`),
- *     so we do too. Registering only via registerLayer was why the command
- *     never appeared in Ctrl+P.
- */
-export function registerReportCommand(api: TuiPluginApi): void {
-  const disposeLayer = api.keymap.registerLayer({
-    commands: [
-      {
-        name: REPORT_COMMAND,
-        title: "MCP savings: report",
-        description: "Full MCP savings report: session tokens + per-server schema measurement",
-        category: "MCP Savings",
-        run: () => {
-          openReportDialog(api);
-        },
-      },
-    ],
-  });
-  api.lifecycle.onDispose(disposeLayer);
-
-  if (api.command?.register) {
-    const disposeLegacy = api.command.register(() => [
-      {
-        title: "MCP savings: report",
-        value: REPORT_COMMAND,
-        description: "Full MCP savings report: session tokens + per-server schema measurement",
-        category: "MCP Savings",
-        slash: { name: "savings" },
-        onSelect: () => openReportDialog(api),
-      },
-    ]);
-    api.lifecycle.onDispose(disposeLegacy);
-  }
 }

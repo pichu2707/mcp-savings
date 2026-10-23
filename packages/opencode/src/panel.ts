@@ -1,10 +1,8 @@
-import type { TuiPlugin } from "@opencode-ai/plugin/tui";
-import { jsx } from "@opentui/solid/jsx-runtime";
-import { createSignal, onCleanup } from "solid-js";
+import { jsx } from "./jsx.js";
+import { solidJs } from "./solid.js";
 import { loadSnapshot } from "@javilazaro/mcp-savings-core";
 import { RUST_ACCENT } from "./render.js";
 import { computeRows, type PanelRow } from "./rows.js";
-import { registerReportCommand } from "./command.js";
 
 /**
  * Turns one `PanelRow` into JSX. Numbers/bars are accented in
@@ -54,6 +52,7 @@ function renderRow(row: PanelRow) {
  * Solid's JSX transform; the emitted tree is identical to compiled `.tsx`.
  */
 export function Panel() {
+  const { createSignal, onCleanup } = solidJs;
   const [rows, setRows] = createSignal(computeRows(loadSnapshot()));
   const timer = setInterval(() => setRows(computeRows(loadSnapshot())), 2000);
   onCleanup(() => clearInterval(timer));
@@ -63,22 +62,3 @@ export function Panel() {
     children: () => rows().map((row) => renderRow(row)),
   });
 }
-
-/**
- * Registers the panel in the `sidebar_content` slot — the right-hand widget
- * area where OpenCode shows Context / MCP / LSP — rather than
- * `session_prompt_right` (which sits next to the prompt input, in the chat
- * column) — AND registers the "MCP savings: report" command/dialog
- * (command.ts) via `api.keymap.registerLayer`, so both the always-visible
- * summary and the on-demand full report come from this one TUI plugin
- * entry point.
- */
-export const tui: TuiPlugin = async (api) => {
-  api.slots.register({
-    order: 0,
-    slots: {
-      sidebar_content: () => Panel(),
-    },
-  });
-  registerReportCommand(api);
-};
