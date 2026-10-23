@@ -152,6 +152,24 @@ function buildReportContent(snapshot: Snapshot | undefined, resolved: ResolvedMe
 }
 
 /**
+ * Loads the snapshot and resolves the MCP measurement, then returns a thunk
+ * that builds the full report's content tree. Host-agnostic: the v1 dialog
+ * (below) and the v2 TUI plugin (tui-v2.ts) both show exactly this tree, so
+ * the two cannot drift.
+ *
+ * The tree is built by the returned thunk, not here, on purpose: `jsx()`
+ * needs an active renderer, which only exists while the host is rendering the
+ * dialog. Building it from this async continuation fails with "No renderer
+ * found", so callers invoke the thunk from inside their dialog render callback.
+ */
+export async function loadReportView() {
+  const snapshot = loadSnapshot();
+  const model = snapshot?.model ?? DEFAULT_MODEL;
+  const resolved = await resolveMeasurement(snapshot, model);
+  return () => buildReportContent(snapshot, resolved);
+}
+
+/**
  * Opens the report dialog via the TUI's custom-content dialog API
  * (`api.ui.Dialog` + `api.ui.dialog.replace` — see TuiDialogProps/
  * TuiDialogStack in tui.d.ts), not `DialogSelect`/`DialogAlert`/etc. (those
@@ -176,14 +194,12 @@ function openReportDialog(api: TuiPluginApi): void {
 
   void (async () => {
     try {
-      const snapshot = loadSnapshot();
-      const model = snapshot?.model ?? DEFAULT_MODEL;
-      const resolved = await resolveMeasurement(snapshot, model);
+      const view = await loadReportView();
       api.ui.dialog.replace(() =>
         api.ui.Dialog({
           size: "large",
           onClose: close,
-          children: buildReportContent(snapshot, resolved),
+          children: view(),
         }),
       );
     } catch (err) {

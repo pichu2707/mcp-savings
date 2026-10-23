@@ -1,4 +1,4 @@
-import type { ServerMeasurement, TokenUsage } from "@javilazaro/mcp-savings-core";
+import type { ServerMeasurement, TokenUsage, WeighableTool } from "@javilazaro/mcp-savings-core";
 
 /**
  * ============================================================================
@@ -82,4 +82,51 @@ export function applyLiveEnabledState(
     const enabled = liveStates.get(measurement.server);
     return enabled === undefined ? measurement : { ...measurement, enabled };
   });
+}
+
+/**
+ * OpenCode v2: reads `ctx.mcp.list()` — an ARRAY of `{ name, status: { status } }`
+ * (v1's `client.mcp.status()` is a name -> `{ status }` record) — into the same
+ * name -> enabled map.
+ *
+ * Funnels through `liveEnabledState` so the v1 honesty rule is not duplicated:
+ * only statuses we know the meaning of produce an entry. v2's `pending` is the
+ * equivalent of v1's `connecting`; `failed`, `needs_auth` and anything unknown
+ * stay OUT of the map, so the measured state stands instead of being guessed.
+ */
+export function liveEnabledStateFromList(servers: unknown): Map<string, boolean> {
+  if (!Array.isArray(servers)) return new Map();
+
+  const asRecord: Record<string, { status?: unknown }> = {};
+  for (const server of servers) {
+    if (!server || typeof server !== "object") continue;
+    const { name, status } = server as { name?: unknown; status?: { status?: unknown } };
+    if (typeof name !== "string" || !status || typeof status !== "object") continue;
+    asRecord[name] = { status: status.status === "pending" ? "connecting" : status.status };
+  }
+  return liveEnabledState(asRecord);
+}
+
+/**
+ * OpenCode v2: turns the tools the model is actually sent (the `context`
+ * session hook's name -> `{ description, input }` record) into the host-agnostic
+ * `WeighableTool` shape, i.e. the same `{ id, description, parameters }` that v1
+ * hands to `weighTools` — so a tool weighs the same number of bytes on either
+ * host. Entries that are not objects are dropped rather than weighed as empty:
+ * absent is never zero.
+ */
+export function toWeighableTools(tools: unknown): WeighableTool[] {
+  if (!tools || typeof tools !== "object" || Array.isArray(tools)) return [];
+
+  const weighable: WeighableTool[] = [];
+  for (const [id, tool] of Object.entries(tools as Record<string, unknown>)) {
+    if (!tool || typeof tool !== "object") continue;
+    const { description, input } = tool as { description?: unknown; input?: unknown };
+    weighable.push({
+      id,
+      description: typeof description === "string" ? description : "",
+      parameters: input,
+    });
+  }
+  return weighable;
 }

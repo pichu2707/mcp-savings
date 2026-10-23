@@ -1,18 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin";
-import {
-  attributeToServers,
-  loadSnapshot,
-  measureServers,
-  readOpencodeMcpSpecs,
-  saveSnapshot,
-  SessionMeter,
-  weighTools,
-  type ServerWeight,
-  type Snapshot,
-} from "@javilazaro/mcp-savings-core";
-import { applyLiveEnabledState, liveEnabledState, toTokenUsage } from "./adapt.js";
-
-const HOST = "opencode";
+import { attributeToServers, weighTools, type ServerWeight } from "@javilazaro/mcp-savings-core";
+import { liveEnabledState, toTokenUsage } from "./adapt.js";
+import { createRecorder } from "./recorder.js";
 
 /**
  * The SERVER plugin — referenced by opencode.json.
@@ -31,7 +20,10 @@ const HOST = "opencode";
  */
 export const OpencodeSavingsPlugin: Plugin = async (input) => {
   const { client, directory } = input;
-  const meter = new SessionMeter();
+  const { meter, persist, refreshMcpMeasurementInBackground } = createRecorder(async () => {
+    const statusResult = await client.mcp.status({ query: mcpQuery() });
+    return liveEnabledState(statusResult.data);
+  });
   const weighedSessions = new Set<string>();
   let lastProviderID: string | undefined;
   let lastModelID: string | undefined;
@@ -62,54 +54,6 @@ export const OpencodeSavingsPlugin: Plugin = async (input) => {
 
     const weights = weighTools(toolsResult.data);
     return attributeToServers(weights, serverNames);
-  }
-
-  function persist(serverWeights: ServerWeight[] | undefined): void {
-    const previous = loadSnapshot();
-    const resolvedWeights = serverWeights ?? previous?.serverWeights ?? [];
-    const snapshot: Snapshot = {
-      timestamp: Date.now(),
-      host: HOST,
-      serverWeights: resolvedWeights,
-      totalSchemaBytes: resolvedWeights.reduce((sum, server) => sum + server.bytes, 0),
-      sessionTokens: meter.totals(),
-      // Carry forward whatever MCP measurement we already have — the
-      // background refresh below (fire-and-forget) merges a fresh one in
-      // once it resolves, independently of this synchronous persist().
-      mcpMeasurement: previous?.mcpMeasurement,
-      model: previous?.model,
-    };
-    saveSnapshot(snapshot);
-  }
-
-  /**
-   * Best-effort, fire-and-forget: connects to each MCP server configured in
-   * OpenCode (same readOpencodeMcpSpecs + measureServers codepath the CLI's
-   * `measure` command uses) and merges the result into the snapshot's
-   * `mcpMeasurement`/`model` fields once it resolves. NON-BLOCKING BY DESIGN
-   * so it never delays the token-capture path; failures are swallowed (the
-   * snapshot just keeps whatever measurement it had, and `report`'s live
-   * fallback covers it).
-   */
-  function refreshMcpMeasurementInBackground(modelID: string): void {
-    void (async () => {
-      try {
-        // `specs` includes `enabled: false` servers on purpose — measuring
-        // one briefly spawns/connects to it even though it's off; see
-        // measure.ts's `measureServers` doc for why that tradeoff is
-        // accepted (it's the only way to get a REALIZED savings number).
-        const specs = readOpencodeMcpSpecs();
-        if (specs.length === 0) return;
-        const statusResult = await client.mcp.status({ query: mcpQuery() });
-        const liveStates = liveEnabledState(statusResult.data);
-        const results = applyLiveEnabledState(await measureServers(specs, modelID), liveStates);
-        const latest = loadSnapshot();
-        if (!latest) return;
-        saveSnapshot({ ...latest, mcpMeasurement: results, model: modelID });
-      } catch (err) {
-        console.error("[mcp-savings] background MCP measurement failed (non-fatal):", err);
-      }
-    })();
   }
 
   return {

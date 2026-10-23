@@ -35,6 +35,14 @@
     ".": {
       "types": "./dist/plugin.d.ts",
       "import": "./dist/plugin.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./tui": {
+      "types": "./dist/tui-entry.d.ts",
+      "import": "./dist/tui-entry.js"
     }
   },
   "files": [
@@ -53,10 +61,11 @@
   "devDependencies": {
     "@opencode-ai/plugin": "1.17.13",
     "@opencode-ai/sdk": "1.17.13",
+    "@opencode/plugin": "2.0.14",
     "@opentui/core": "0.4.3",
     "@opentui/keymap": "0.4.3",
-    "solid-js": "1.9.12",
     "@types/node": "^24.0.0",
+    "solid-js": "1.9.12",
     "typescript": "^5.7.3"
   }
 }

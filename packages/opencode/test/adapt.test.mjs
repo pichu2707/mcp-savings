@@ -24,7 +24,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { toTokenUsage, liveEnabledState, applyLiveEnabledState } from "../dist/adapt.js";
+import {
+  toTokenUsage,
+  liveEnabledState,
+  applyLiveEnabledState,
+  liveEnabledStateFromList,
+  toWeighableTools,
+} from "../dist/adapt.js";
 
 /** A measured server, shaped like core's ServerMeasurement. */
 const measured = (server, extra = {}) => ({
@@ -202,4 +208,67 @@ test("applyLiveEnabledState is a no-op when there is no live state at all", () =
   const original = [measured("engram", { enabled: true })];
 
   assert.equal(applyLiveEnabledState(original, new Map()), original);
+});
+
+// ---------------------------------------------------------------------------
+// OpenCode v2 shapes
+//
+// v2 replaces `client.mcp.status()` (a name -> {status} record) with
+// `ctx.mcp.list()` (an ARRAY of {name, status: {status}}), and replaces the
+// `/experimental/tool` list with the tools the model is actually sent
+// (`session.hook("context")`: a name -> {description, input} record). These
+// adapters translate them into the shapes the v1 path already consumes, so
+// the same honesty rules (unknown status => left out, never guessed) apply.
+// ---------------------------------------------------------------------------
+
+test("liveEnabledStateFromList maps v2 connected/pending to enabled and disabled to disabled", () => {
+  const states = liveEnabledStateFromList([
+    { name: "engram", status: { status: "connected" } },
+    { name: "slow", status: { status: "pending" } },
+    { name: "off", status: { status: "disabled" } },
+  ]);
+
+  assert.equal(states.get("engram"), true);
+  assert.equal(states.get("slow"), true, "pending is a server on its way up");
+  assert.equal(states.get("off"), false);
+});
+
+test("liveEnabledStateFromList leaves failed, needs_auth and unknown statuses OUT", () => {
+  // Same rule as v1: a state we cannot classify must not move a server
+  // between the PAY and SAVED columns.
+  const states = liveEnabledStateFromList([
+    { name: "broken", status: { status: "failed", error: "boom" } },
+    { name: "auth", status: { status: "needs_auth", error: "login" } },
+    { name: "future", status: { status: "hibernating" } },
+  ]);
+
+  assert.equal(states.size, 0);
+});
+
+test("liveEnabledStateFromList survives hostile payloads", () => {
+  for (const payload of [undefined, null, 42, "x", {}, [null, 3, "x", {}, { name: 1 }, { name: "a" }, { name: "b", status: "connected" }]]) {
+    assert.equal(liveEnabledStateFromList(payload).size, 0, `payload: ${JSON.stringify(payload)}`);
+  }
+});
+
+test("toWeighableTools turns the v2 context tool record into weighable tools", () => {
+  const tools = toWeighableTools({
+    engram_mem_save: { description: "Save a memory", input: { type: "object", properties: {} } },
+    bash: { description: "Run a command", input: { type: "object" } },
+  });
+
+  assert.deepEqual(tools, [
+    { id: "engram_mem_save", description: "Save a memory", parameters: { type: "object", properties: {} } },
+    { id: "bash", description: "Run a command", parameters: { type: "object" } },
+  ]);
+});
+
+test("toWeighableTools never invents content for malformed entries", () => {
+  assert.deepEqual(toWeighableTools(undefined), []);
+  assert.deepEqual(toWeighableTools(null), []);
+  assert.deepEqual(toWeighableTools([]), []);
+  assert.deepEqual(toWeighableTools({ a: null, b: 7 }), [], "non-object entries are dropped, not weighed as empty");
+  assert.deepEqual(toWeighableTools({ c: { input: { type: "object" } } }), [
+    { id: "c", description: "", parameters: { type: "object" } },
+  ]);
 });
