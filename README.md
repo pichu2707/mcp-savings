@@ -20,6 +20,9 @@ npm install @javilazaro/mcp-savings-opencode   # the OpenCode adapter
 npm install @javilazaro/mcp-savings-core       # the library + CLI
 ```
 
+To register the OpenCode plugins (server and TUI), see
+[packages/opencode/README.md](packages/opencode/README.md#configure).
+
 The core package ships a `mcp-savings` binary:
 
 ```

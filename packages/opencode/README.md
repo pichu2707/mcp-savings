@@ -12,9 +12,55 @@ by [Javi Lázaro](https://github.com/pichu2707) · MIT
 
 ## Install
 
+From npm:
+
 ```sh
 npm install @javilazaro/mcp-savings-opencode
 ```
+
+From a local checkout:
+
+```sh
+pnpm install && pnpm build
+```
+
+## Configure
+
+The package ships two plugins, and OpenCode loads each from a different config
+file. Register both. Use the package name for an npm install, or the absolute
+path to `packages/opencode` for a local checkout.
+
+| Plugin | OpenCode 2.x | OpenCode 1.x |
+| --- | --- | --- |
+| Server (metering) | `~/.config/opencode/opencode.json`, key `plugin` | same |
+| TUI (sidebar, `/savings`) | `~/.config/opencode/cli.json`, key `plugins` | `~/.config/opencode/tui.json`, key `plugin` |
+
+```jsonc
+// opencode.json
+{ "plugin": ["file:///abs/path/to/mcp-savings/packages/opencode"] }
+
+// cli.json (2.x); add "$schema": "https://opencode.ai/v2/cli.json"
+{ "plugins": ["/abs/path/to/mcp-savings/packages/opencode"] }
+```
+
+With npm, replace the path with `"@javilazaro/mcp-savings-opencode"`.
+
+**Local paths must be a directory.** OpenCode 2.2+ rejects a plugin path that
+points at a file and skips it silently. Point at the package directory; OpenCode
+resolves the entry through `package.json` `exports` (`./server`, `./tui`). To
+spot the failure, grep the OpenCode log for:
+
+```text
+configured plugin path must be a directory
+```
+
+**Confirm it loaded.** `/plugins` lists `mcp-savings` as `local` under both TUI
+and Server, and `~/.config/mcp-savings/tui.log` contains a `setup:` line, e.g.
+`setup: OpenCode 2.2.2, solid={"@opentui/solid":"host","solid-js":"host"}`.
+
+At runtime OpenCode 2.x swaps in its own `@opentui/*` and `solid-js` for the
+TUI plugin, so the panel always renders with the host's copies. npm still
+installs them as peers; the `@opentui/*` peers accept `>=0.5.0 <0.8`.
 
 ## Sidebar
 
