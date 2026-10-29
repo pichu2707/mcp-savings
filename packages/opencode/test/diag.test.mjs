@@ -6,7 +6,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -30,10 +30,16 @@ test("logDiagnostic appends timestamped lines under ~/.config/mcp-savings/tui.lo
 
 test("logDiagnostic never throws, even when the directory cannot be written", () => {
   const previous = process.env.HOME;
-  process.env.HOME = "/proc/definitely/not/writable";
+  // A regular file as HOME makes mkdir fail fast with ENOTDIR. A path under
+  // /proc is not portable: on Node 26 recursive mkdirSync spins there forever.
+  const dir = mkdtempSync(join(tmpdir(), "mcpsav-diag-"));
+  const file = join(dir, "not-a-dir");
+  writeFileSync(file, "");
+  process.env.HOME = file;
   try {
     assert.doesNotThrow(() => logDiagnostic("x"));
   } finally {
     process.env.HOME = previous;
+    rmSync(dir, { recursive: true, force: true });
   }
 });
