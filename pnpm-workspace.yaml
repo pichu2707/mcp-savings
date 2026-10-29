@@ -13,13 +13,9 @@ allowBuilds:
   # ships an optional postinstall we do not need.
   protobufjs: false
 minimumReleaseAgeExclude:
-  - '@opentui/core-darwin-arm64@0.6.8'
-  - '@opentui/core-darwin-x64@0.6.8'
-  - '@opentui/core-linux-arm64-musl@0.6.8'
-  - '@opentui/core-linux-arm64@0.6.8'
-  - '@opentui/core-linux-x64-musl@0.6.8'
-  - '@opentui/core-linux-x64@0.6.8'
-  - '@opentui/core-win32-arm64@0.6.8'
-  - '@opentui/core-win32-x64@0.6.8'
-  - '@opentui/core@0.6.8'
-  - '@opentui/solid@0.6.8'
+  - '@opencode/ai@2.2.2'
+  - '@opencode/client@2.2.2'
+  - '@opencode/plugin@2.2.2'
+  - '@opencode/protocol@2.2.2'
+  - '@opencode/schema@2.2.2'
+  - '@opencode/util@2.2.2'

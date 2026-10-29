@@ -1,6 +1,6 @@
 {
   "name": "@javilazaro/mcp-savings-opencode",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "type": "module",
   "description": "OpenCode host adapter for mcp-savings: measures real token usage and MCP tool schema weight from inside a running OpenCode session.",
   "keywords": [
@@ -60,9 +60,9 @@
   "devDependencies": {
     "@opencode-ai/plugin": "1.17.13",
     "@opencode-ai/sdk": "1.17.13",
-    "@opencode/plugin": "2.0.14",
-    "@opentui/core": "0.6.8",
-    "@opentui/solid": "0.6.8",
+    "@opencode/plugin": "2.2.2",
+    "@opentui/core": "0.7.0",
+    "@opentui/solid": "0.7.0",
     "@types/node": "^24.0.0",
     "esbuild": "0.25.12",
     "solid-js": "1.9.12",
@@ -70,8 +70,8 @@
   },
   "peerDependencies": {
     "@opencode/plugin": ">=2.0.0 <3",
-    "@opentui/core": ">=0.5.0 <0.7",
-    "@opentui/solid": ">=0.5.0 <0.7",
+    "@opentui/core": ">=0.5.0 <0.8",
+    "@opentui/solid": ">=0.5.0 <0.8",
     "solid-js": ">=1.9.12 <2"
   },
   "peerDependenciesMeta": {
